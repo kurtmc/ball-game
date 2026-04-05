@@ -9,11 +9,12 @@ local RELEASES_URL = "https://github.com/" .. REPO .. "/releases/latest"
 updater.current_version = version
 updater.latest_version = nil
 updater.update_available = false
-updater.download_url = RELEASES_URL
+updater.installer_url = nil
 updater.check_done = false
 updater.dismissed = false
 updater.checking = false
 updater.check_failed = false
+updater.downloading = false
 updater.status_message = nil
 updater.status_timer = 0
 
@@ -61,14 +62,68 @@ end
 
 if body and #body > 0 then
     local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
+    -- Find the setup exe download URL
+    local installer_url = body:match('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"')
     if tag then
-        channel:push(tag)
+        channel:push(tag .. "|" .. (installer_url or ""))
         return
     end
 end
 
 channel:push("error")
 ]==]
+
+local download_channel = nil
+local download_thread = nil
+
+local download_thread_code = [==[
+local installer_url = ...
+require("love.system")
+local channel = love.thread.getChannel("updater_download")
+
+local os_name = love.system.getOS()
+
+if os_name == "Windows" then
+    local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
+    local installer_path = temp .. "\\ballz-setup.exe"
+    os.remove(installer_path)
+
+    local cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
+        .. "try { "
+        .. "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
+        .. "Invoke-WebRequest -Uri '" .. installer_url .. "' -OutFile '" .. installer_path .. "' -UseBasicParsing"
+        .. " } catch { }"
+        .. '"'
+    os.execute(cmd)
+
+    -- Check if file was downloaded
+    local f = io.open(installer_path, "r")
+    if f then
+        local size = f:seek("end")
+        f:close()
+        if size and size > 10000 then
+            channel:push("ok|" .. installer_path)
+            return
+        end
+    end
+    channel:push("error")
+else
+    -- Non-Windows: just report the URL, can't auto-install
+    channel:push("noinstaller")
+end
+]==]
+
+function updater.startDownload()
+    if updater.downloading or not updater.installer_url then return end
+    updater.downloading = true
+    updater.status_message = "Downloading update..."
+    updater.status_timer = 999
+
+    download_channel = love.thread.getChannel("updater_download")
+    while download_channel:pop() do end
+    download_thread = love.thread.newThread(download_thread_code)
+    download_thread:start(updater.installer_url)
+end
 
 function updater.checkForUpdates()
     if updater.checking then return end
@@ -108,8 +163,10 @@ function updater.update(dt)
         updater.check_done = true
         updater.checking = false
         if result ~= "error" then
-            updater.latest_version = result
-            updater.update_available = compareVersions(updater.current_version, result)
+            local tag, installer = result:match("^([^|]+)|(.*)$")
+            updater.latest_version = tag or result
+            updater.installer_url = (installer and #installer > 0) and installer or nil
+            updater.update_available = compareVersions(updater.current_version, updater.latest_version)
             if not updater.update_available then
                 updater.status_message = "You're up to date! (" .. updater.current_version .. ")"
                 updater.status_timer = 4
@@ -128,6 +185,31 @@ function updater.update(dt)
         updater.check_failed = true
         updater.status_message = "Update check failed"
         updater.status_timer = 4
+    end
+
+    -- Poll download thread
+    if updater.downloading and download_channel then
+        local dl_result = download_channel:pop()
+        if dl_result then
+            updater.downloading = false
+            if dl_result:sub(1, 2) == "ok" then
+                local installer_path = dl_result:match("^ok|(.+)$")
+                -- Launch installer and quit
+                os.execute('start "" "' .. installer_path .. '"')
+                love.event.quit()
+            elseif dl_result == "noinstaller" then
+                -- Fallback for non-Windows
+                love.system.openURL(RELEASES_URL)
+            else
+                updater.status_message = "Download failed"
+                updater.status_timer = 4
+            end
+        end
+        if download_thread and download_thread:getError() then
+            updater.downloading = false
+            updater.status_message = "Download failed"
+            updater.status_timer = 4
+        end
     end
 end
 
@@ -197,10 +279,13 @@ function updater.draw()
         love.graphics.rectangle("fill", 0, 0, w, banner_h)
 
         love.graphics.setColor(1, 1, 1)
-        love.graphics.printf(
-            "Update available: " .. (updater.latest_version or "") .. "  |  Press [U] to open download  |  [X] to dismiss",
-            10, 7, w - 20, "center"
-        )
+        local msg
+        if updater.downloading then
+            msg = "Downloading " .. (updater.latest_version or "") .. "..."
+        else
+            msg = "Update available: " .. (updater.latest_version or "") .. "  |  Press [U] to install  |  [X] to dismiss"
+        end
+        love.graphics.printf(msg, 10, 7, w - 20, "center")
     end
 end
 
@@ -219,7 +304,7 @@ function updater.keypressed(key)
     if not updater.update_available or updater.dismissed then return false end
 
     if key == "u" then
-        love.system.openURL(updater.download_url)
+        updater.startDownload()
         return true
     elseif key == "x" then
         updater.dismissed = true
