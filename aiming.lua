@@ -4,7 +4,7 @@ local util = require("util")
 
 local aiming = {}
 
-local MIN_ANGLE = 0.14  -- ~8 degrees from horizontal
+local MIN_ANGLE = 0.035  -- ~2 degrees from horizontal
 
 function aiming.mousepressed(game, x, y)
     if y < G.FLOOR_Y then
