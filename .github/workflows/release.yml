@@ -41,11 +41,39 @@ jobs:
           7z x love-win64.zip
           mv love-${LOVE_VERSION}-win64 love-win64
 
+      - name: Generate app icon
+        shell: bash
+        run: |
+          # Create a ball icon: bright circle on dark background with highlight
+          magick -size 256x256 xc:"#14141E" \
+            -fill "#E64D4D" -draw "circle 128,128 128,28" \
+            -fill "#FF8080" -draw "circle 100,100 100,75" \
+            -fill "#FFB3B3" -draw "circle 90,90 90,80" \
+            ballz-256.png
+          # Convert to .ico with multiple sizes
+          magick ballz-256.png \
+            \( -clone 0 -resize 16x16 \) \
+            \( -clone 0 -resize 32x32 \) \
+            \( -clone 0 -resize 48x48 \) \
+            \( -clone 0 -resize 64x64 \) \
+            \( -clone 0 -resize 128x128 \) \
+            \( -clone 0 -resize 256x256 \) \
+            -delete 0 ballz.ico
+
+      - name: Download rcedit
+        shell: bash
+        run: |
+          curl -L -o rcedit.exe "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe"
+
       - name: Fuse Windows executable
         shell: bash
         run: |
           cat love-win64/love.exe ballz.love > love-win64/ballz.exe
           rm love-win64/love.exe love-win64/lovec.exe
+          # Replace the icon in the fused exe
+          ./rcedit.exe love-win64/ballz.exe --set-icon ballz.ico
+          # Copy icon for installer shortcuts
+          cp ballz.ico love-win64/ballz.ico
           mv love-win64 ballz-win64
 
       - name: Package zip
