@@ -18,6 +18,8 @@ local thread = nil
 
 local thread_code = [==[
 local url = ...
+require("love.system")
+require("love.filesystem")
 local channel = love.thread.getChannel("updater")
 
 local os_name = love.system.getOS()
