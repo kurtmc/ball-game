@@ -12,6 +12,10 @@ updater.update_available = false
 updater.download_url = RELEASES_URL
 updater.check_done = false
 updater.dismissed = false
+updater.checking = false
+updater.check_failed = false
+updater.status_message = nil
+updater.status_timer = 0
 
 local channel = nil
 local thread = nil
@@ -67,9 +71,16 @@ channel:push("error")
 ]==]
 
 function updater.checkForUpdates()
-    if version == "0.0.0-dev" then return end  -- skip in dev mode
+    if updater.checking then return end
+
+    updater.check_done = false
+    updater.check_failed = false
+    updater.checking = true
+    updater.dismissed = false
 
     channel = love.thread.getChannel("updater")
+    -- Drain any stale messages
+    while channel:pop() do end
     thread = love.thread.newThread(thread_code)
     thread:start(CHECK_URL)
 end
@@ -81,40 +92,93 @@ local function compareVersions(current, latest)
     return current ~= latest
 end
 
-function updater.update()
+function updater.update(dt)
+    -- Fade status messages
+    if updater.status_timer > 0 then
+        updater.status_timer = updater.status_timer - dt
+        if updater.status_timer <= 0 then
+            updater.status_message = nil
+        end
+    end
+
     if updater.check_done or not channel then return end
 
     local result = channel:pop()
     if result then
         updater.check_done = true
+        updater.checking = false
         if result ~= "error" then
             updater.latest_version = result
             updater.update_available = compareVersions(updater.current_version, result)
+            if not updater.update_available then
+                updater.status_message = "You're up to date! (" .. updater.current_version .. ")"
+                updater.status_timer = 4
+            end
+        else
+            updater.check_failed = true
+            updater.status_message = "Update check failed"
+            updater.status_timer = 4
         end
-        -- Check for thread errors
-        if thread and thread:getError() then
-            -- Silently ignore update check failures
-        end
+    end
+
+    -- Check for thread errors
+    if thread and thread:getError() then
+        updater.check_done = true
+        updater.checking = false
+        updater.check_failed = true
+        updater.status_message = "Update check failed"
+        updater.status_timer = 4
     end
 end
 
+-- Button dimensions for "Check for updates"
+local BTN_W, BTN_H = 150, 24
+local BTN_X, BTN_Y = 800 - BTN_W - 10, 800 - BTN_H - 6
+
 function updater.draw()
-    if not updater.update_available or updater.dismissed then return end
+    -- Always draw version + check button in bottom-right
+    love.graphics.setColor(0.4, 0.4, 0.4)
+    love.graphics.printf(updater.current_version, 10, 800 - 22, 200, "left")
 
-    local w = 800
-    local banner_h = 30
-    local y = 0
+    -- "Check for updates" button
+    local label = updater.checking and "Checking..." or "Check for updates"
+    love.graphics.setColor(0.2, 0.2, 0.3)
+    love.graphics.rectangle("fill", BTN_X, BTN_Y, BTN_W, BTN_H, 4, 4)
+    love.graphics.setColor(0.5, 0.5, 0.6)
+    love.graphics.rectangle("line", BTN_X, BTN_Y, BTN_W, BTN_H, 4, 4)
+    love.graphics.setColor(0.8, 0.8, 0.8)
+    love.graphics.printf(label, BTN_X, BTN_Y + 5, BTN_W, "center")
 
-    -- Banner background
-    love.graphics.setColor(0.15, 0.5, 0.15, 0.9)
-    love.graphics.rectangle("fill", 0, y, w, banner_h)
+    -- Status message (fades out)
+    if updater.status_message and updater.status_timer > 0 then
+        local alpha = math.min(1, updater.status_timer)
+        love.graphics.setColor(0.8, 0.8, 0.8, alpha)
+        love.graphics.printf(updater.status_message, BTN_X - 200, BTN_Y + 5, 190, "right")
+    end
 
-    -- Text
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.printf(
-        "Update available: " .. (updater.latest_version or "") .. "  |  Press [U] to open download  |  [X] to dismiss",
-        10, y + 7, w - 20, "center"
-    )
+    -- Update available banner
+    if updater.update_available and not updater.dismissed then
+        local w = 800
+        local banner_h = 30
+
+        love.graphics.setColor(0.15, 0.5, 0.15, 0.9)
+        love.graphics.rectangle("fill", 0, 0, w, banner_h)
+
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf(
+            "Update available: " .. (updater.latest_version or "") .. "  |  Press [U] to open download  |  [X] to dismiss",
+            10, 7, w - 20, "center"
+        )
+    end
+end
+
+function updater.mousepressed(x, y)
+    -- Check if "Check for updates" button was clicked
+    if x >= BTN_X and x <= BTN_X + BTN_W and y >= BTN_Y and y <= BTN_Y + BTN_H then
+        updater.checkForUpdates()
+        return true
+    end
+    return false
 end
 
 function updater.keypressed(key)

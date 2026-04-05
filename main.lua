@@ -62,7 +62,7 @@ function love.load()
 end
 
 function love.update(dt)
-    updater.update()
+    updater.update(dt)
     states.update(game, dt)
     particles.update(dt)
 
@@ -95,6 +95,7 @@ end
 
 function love.mousepressed(x, y, button)
     if button == 1 then
+        if updater.mousepressed(x, y) then return end
         states.mousepressed(game, x, y)
     end
 end
