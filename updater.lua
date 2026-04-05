@@ -131,25 +131,61 @@ function updater.update(dt)
     end
 end
 
--- Hit area for the text link
-local BTN_W, BTN_H = 120, 16
-local BTN_X, BTN_Y = 800 - BTN_W - 8, 800 - BTN_H - 4
+-- Refresh icon hit area
+local ICON_R = 10
+local ICON_CX, ICON_CY = 800 - ICON_R - 8, 800 - ICON_R - 6
+local spin_angle = 0
+
+local function drawRefreshIcon(cx, cy, r, color_r, color_g, color_b, alpha)
+    love.graphics.setColor(color_r, color_g, color_b, alpha)
+    love.graphics.setLineWidth(2)
+
+    -- Draw a circular arc (~270 degrees)
+    local segments = 20
+    local start_a = spin_angle
+    local arc_len = math.pi * 1.5
+    local points = {}
+    for i = 0, segments do
+        local a = start_a + (i / segments) * arc_len
+        table.insert(points, cx + math.cos(a) * r)
+        table.insert(points, cy + math.sin(a) * r)
+    end
+    love.graphics.line(points)
+
+    -- Arrowhead at the end of the arc
+    local end_a = start_a + arc_len
+    local ex = cx + math.cos(end_a) * r
+    local ey = cy + math.sin(end_a) * r
+    local arrow_size = 5
+    local a1 = end_a + 0.6
+    local a2 = end_a + 2.2
+    love.graphics.polygon("fill",
+        ex, ey,
+        ex + math.cos(a1) * arrow_size, ey + math.sin(a1) * arrow_size,
+        ex + math.cos(a2) * arrow_size, ey + math.sin(a2) * arrow_size
+    )
+
+    love.graphics.setLineWidth(1)
+end
 
 function updater.draw()
     -- Version in bottom-left
     love.graphics.setColor(0.25, 0.25, 0.3)
     love.graphics.printf(updater.current_version, 10, 800 - 18, 200, "left")
 
-    -- "Check for updates" as subtle text link
-    local label = updater.checking and "checking..." or "check for updates"
-    love.graphics.setColor(0.3, 0.3, 0.4)
-    love.graphics.printf(label, BTN_X, BTN_Y, BTN_W, "right")
+    -- Refresh icon
+    if updater.checking then
+        spin_angle = spin_angle + 0.1
+        drawRefreshIcon(ICON_CX, ICON_CY, ICON_R, 0.4, 0.4, 0.5, 0.7)
+    else
+        drawRefreshIcon(ICON_CX, ICON_CY, ICON_R, 0.3, 0.3, 0.4, 0.5)
+    end
 
     -- Status message (fades out)
     if updater.status_message and updater.status_timer > 0 then
         local alpha = math.min(1, updater.status_timer) * 0.5
         love.graphics.setColor(0.5, 0.5, 0.5, alpha)
-        love.graphics.printf(updater.status_message, BTN_X - 200, BTN_Y, 195, "right")
+        love.graphics.printf(updater.status_message, ICON_CX - 210, ICON_CY - 6, 200, "right")
     end
 
     -- Update available banner
@@ -169,8 +205,10 @@ function updater.draw()
 end
 
 function updater.mousepressed(x, y)
-    -- Check if "Check for updates" button was clicked
-    if x >= BTN_X and x <= BTN_X + BTN_W and y >= BTN_Y and y <= BTN_Y + BTN_H then
+    -- Check if refresh icon was clicked
+    local dx = x - ICON_CX
+    local dy = y - ICON_CY
+    if dx * dx + dy * dy <= (ICON_R + 4) * (ICON_R + 4) then
         updater.checkForUpdates()
         return true
     end
