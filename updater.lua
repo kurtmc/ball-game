@@ -131,29 +131,25 @@ function updater.update(dt)
     end
 end
 
--- Button dimensions for "Check for updates"
-local BTN_W, BTN_H = 150, 24
-local BTN_X, BTN_Y = 800 - BTN_W - 10, 800 - BTN_H - 6
+-- Hit area for the text link
+local BTN_W, BTN_H = 120, 16
+local BTN_X, BTN_Y = 800 - BTN_W - 8, 800 - BTN_H - 4
 
 function updater.draw()
-    -- Always draw version + check button in bottom-right
-    love.graphics.setColor(0.4, 0.4, 0.4)
-    love.graphics.printf(updater.current_version, 10, 800 - 22, 200, "left")
+    -- Version in bottom-left
+    love.graphics.setColor(0.25, 0.25, 0.3)
+    love.graphics.printf(updater.current_version, 10, 800 - 18, 200, "left")
 
-    -- "Check for updates" button
-    local label = updater.checking and "Checking..." or "Check for updates"
-    love.graphics.setColor(0.2, 0.2, 0.3)
-    love.graphics.rectangle("fill", BTN_X, BTN_Y, BTN_W, BTN_H, 4, 4)
-    love.graphics.setColor(0.5, 0.5, 0.6)
-    love.graphics.rectangle("line", BTN_X, BTN_Y, BTN_W, BTN_H, 4, 4)
-    love.graphics.setColor(0.8, 0.8, 0.8)
-    love.graphics.printf(label, BTN_X, BTN_Y + 5, BTN_W, "center")
+    -- "Check for updates" as subtle text link
+    local label = updater.checking and "checking..." or "check for updates"
+    love.graphics.setColor(0.3, 0.3, 0.4)
+    love.graphics.printf(label, BTN_X, BTN_Y, BTN_W, "right")
 
     -- Status message (fades out)
     if updater.status_message and updater.status_timer > 0 then
-        local alpha = math.min(1, updater.status_timer)
-        love.graphics.setColor(0.8, 0.8, 0.8, alpha)
-        love.graphics.printf(updater.status_message, BTN_X - 200, BTN_Y + 5, 190, "right")
+        local alpha = math.min(1, updater.status_timer) * 0.5
+        love.graphics.setColor(0.5, 0.5, 0.5, alpha)
+        love.graphics.printf(updater.status_message, BTN_X - 200, BTN_Y, 195, "right")
     end
 
     -- Update available banner
