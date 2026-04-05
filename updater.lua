@@ -19,7 +19,6 @@ local thread = nil
 local thread_code = [==[
 local url = ...
 require("love.system")
-require("love.filesystem")
 local channel = love.thread.getChannel("updater")
 
 local os_name = love.system.getOS()
@@ -27,44 +26,26 @@ local os_name = love.system.getOS()
 local body = nil
 
 if os_name == "Windows" then
-    -- Use VBScript + MSXML2 to make HTTPS request with no visible window
-    local save_dir = love.filesystem.getSaveDirectory()
-    local vbs_path = save_dir .. "/update_check.vbs"
-    local out_path = save_dir .. "/update_result.txt"
-    local out_path_bs = out_path:gsub("/", "\\")
+    -- Use PowerShell hidden window to make HTTPS request, write to %TEMP%
+    local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
+    local out_path = temp .. "\\ballz_update_check.txt"
+    -- Clean up any stale file
+    os.remove(out_path)
+    local cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
+        .. "try { "
+        .. "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
+        .. "$r = Invoke-WebRequest -Uri '" .. url .. "' -UseBasicParsing; "
+        .. "Set-Content -Path '" .. out_path .. "' -Value $r.Content -Encoding UTF8"
+        .. " } catch { }"
+        .. '"'
+    os.execute(cmd)
 
-    local vbs = 'Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")\r\n'
-        .. 'http.Open "GET", "' .. url .. '", False\r\n'
-        .. 'http.setRequestHeader "User-Agent", "Ballz-Game"\r\n'
-        .. 'http.setRequestHeader "Accept", "application/vnd.github.v3+json"\r\n'
-        .. 'http.Send\r\n'
-        .. 'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
-        .. 'Set f = fso.CreateTextFile("' .. out_path_bs .. '", True)\r\n'
-        .. 'f.Write http.responseText\r\n'
-        .. 'f.Close\r\n'
-
-    -- Write VBS script
-    local vf = io.open(vbs_path, "w")
-    if not vf then
-        channel:push("error")
-        return
-    end
-    vf:write(vbs)
-    vf:close()
-
-    -- Run with wscript (GUI host, no console window)
-    os.execute('wscript "' .. vbs_path:gsub("/", "\\") .. '"')
-
-    -- Read result
     local rf = io.open(out_path, "r")
     if rf then
         body = rf:read("*a")
         rf:close()
+        os.remove(out_path)
     end
-
-    -- Cleanup
-    os.remove(vbs_path)
-    os.remove(out_path)
 else
     -- Unix: use curl directly (no window flash issue)
     local handle = io.popen('curl -s -L -H "Accept: application/vnd.github.v3+json" "' .. url .. '" 2>/dev/null')
