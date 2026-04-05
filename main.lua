@@ -2,6 +2,7 @@ local G = require("grid")
 local states = require("states")
 local ui = require("ui")
 local particles = require("particles")
+local updater = require("updater")
 
 local game = {}
 
@@ -57,9 +58,11 @@ function love.load()
     audio.load()
     resetGame()
     game.resetGame = resetGame
+    updater.checkForUpdates()
 end
 
 function love.update(dt)
+    updater.update()
     states.update(game, dt)
     particles.update(dt)
 
@@ -85,6 +88,9 @@ function love.draw()
     ui.drawHUD(game)
 
     love.graphics.pop()
+
+    -- Draw update banner on top of everything (outside shake transform)
+    updater.draw()
 end
 
 function love.mousepressed(x, y, button)
@@ -104,5 +110,6 @@ function love.mousereleased(x, y, button)
 end
 
 function love.keypressed(key)
+    if updater.keypressed(key) then return end
     states.keypressed(game, key)
 end

@@ -9,40 +9,63 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create .love file
-        run: zip -9 -r ballz.love . -x ".git/*" ".github/*" "*.md"
+      - name: Generate version
+        id: version
+        shell: bash
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="1.0.0-${SHORT_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Download LÖVE for Windows
+      - name: Stamp version into game
+        shell: bash
+        run: |
+          echo "return \"${{ steps.version.outputs.version }}\"" > version.lua
+
+      - name: Create .love file
+        shell: bash
+        run: |
+          7z a -tzip ballz.love *.lua -x!installer.iss
+
+      - name: Download LOVE for Windows
+        shell: bash
         run: |
           LOVE_VERSION="11.5"
           curl -L -o love-win64.zip "https://github.com/love2d/love/releases/download/${LOVE_VERSION}/love-${LOVE_VERSION}-win64.zip"
-          unzip love-win64.zip
+          7z x love-win64.zip
           mv love-${LOVE_VERSION}-win64 love-win64
 
       - name: Fuse Windows executable
+        shell: bash
         run: |
           cat love-win64/love.exe ballz.love > love-win64/ballz.exe
           rm love-win64/love.exe love-win64/lovec.exe
           mv love-win64 ballz-win64
 
       - name: Package zip
-        run: zip -9 -r ballz-win64.zip ballz-win64/
+        shell: bash
+        run: 7z a ballz-win64.zip ballz-win64/
 
-      - name: Generate tag name
-        id: tag
-        run: echo "tag=v1.0.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build installer
+        shell: cmd
+        env:
+          BALLZ_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Ballz ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Ballz ${{ steps.version.outputs.tag }}
           files: |
             ballz-win64.zip
             ballz.love
+            output/ballz-setup-${{ steps.version.outputs.version }}.exe
           generate_release_notes: true
