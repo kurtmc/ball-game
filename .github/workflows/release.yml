@@ -1,0 +1,45 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .love file
+        run: zip -9 -r ballz.love . -x ".git/*" ".github/*" "*.md"
+
+      - name: Download LÖVE for Windows
+        run: |
+          LOVE_VERSION="11.5"
+          curl -L -o love-win64.zip "https://github.com/love2d/love/releases/download/${LOVE_VERSION}/love-${LOVE_VERSION}-win64.zip"
+          unzip love-win64.zip
+          mv love-${LOVE_VERSION}-win64 love-win64
+
+      - name: Fuse Windows executable
+        run: |
+          cat love-win64/love.exe ballz.love > love-win64/ballz.exe
+          rm love-win64/love.exe love-win64/lovec.exe
+          mv love-win64 ballz-win64
+
+      - name: Package zip
+        run: zip -9 -r ballz-win64.zip ballz-win64/
+
+      - name: Generate tag name
+        id: tag
+        run: echo "tag=v1.0.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Ballz ${{ steps.tag.outputs.tag }}
+          files: |
+            ballz-win64.zip
+            ballz.love
+          generate_release_notes: true
