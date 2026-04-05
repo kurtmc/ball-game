@@ -68,10 +68,10 @@ jobs:
       - name: Fuse Windows executable
         shell: bash
         run: |
+          # Set icon on love.exe BEFORE fusing — rcedit after fuse corrupts the appended .love data
+          ./rcedit.exe love-win64/love.exe --set-icon ballz.ico
           cat love-win64/love.exe ballz.love > love-win64/ballz.exe
           rm love-win64/love.exe love-win64/lovec.exe
-          # Replace the icon in the fused exe
-          ./rcedit.exe love-win64/ballz.exe --set-icon ballz.ico
           # Copy icon for installer shortcuts
           cp ballz.ico love-win64/ballz.ico
           mv love-win64 ballz-win64
