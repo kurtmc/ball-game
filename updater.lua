@@ -16,32 +16,72 @@ updater.dismissed = false
 local channel = nil
 local thread = nil
 
-local thread_code = [[
+local thread_code = [==[
 local url = ...
-local http = require("socket.http")
-local ltn12 = require("ltn12")
+local channel = love.thread.getChannel("updater")
 
--- GitHub API redirects HTTP to HTTPS, so use curl which handles HTTPS
-local handle = io.popen('curl -s -L -H "Accept: application/vnd.github.v3+json" "' .. url .. '" 2>/dev/null')
-if not handle then
-    love.thread.getChannel("updater"):push("error")
-    return
+local os_name = love.system.getOS()
+
+local body = nil
+
+if os_name == "Windows" then
+    -- Use VBScript + MSXML2 to make HTTPS request with no visible window
+    local save_dir = love.filesystem.getSaveDirectory()
+    local vbs_path = save_dir .. "/update_check.vbs"
+    local out_path = save_dir .. "/update_result.txt"
+    local out_path_bs = out_path:gsub("/", "\\")
+
+    local vbs = 'Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")\r\n'
+        .. 'http.Open "GET", "' .. url .. '", False\r\n'
+        .. 'http.setRequestHeader "User-Agent", "Ballz-Game"\r\n'
+        .. 'http.setRequestHeader "Accept", "application/vnd.github.v3+json"\r\n'
+        .. 'http.Send\r\n'
+        .. 'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
+        .. 'Set f = fso.CreateTextFile("' .. out_path_bs .. '", True)\r\n'
+        .. 'f.Write http.responseText\r\n'
+        .. 'f.Close\r\n'
+
+    -- Write VBS script
+    local vf = io.open(vbs_path, "w")
+    if not vf then
+        channel:push("error")
+        return
+    end
+    vf:write(vbs)
+    vf:close()
+
+    -- Run with wscript (GUI host, no console window)
+    os.execute('wscript "' .. vbs_path:gsub("/", "\\") .. '"')
+
+    -- Read result
+    local rf = io.open(out_path, "r")
+    if rf then
+        body = rf:read("*a")
+        rf:close()
+    end
+
+    -- Cleanup
+    os.remove(vbs_path)
+    os.remove(out_path)
+else
+    -- Unix: use curl directly (no window flash issue)
+    local handle = io.popen('curl -s -L -H "Accept: application/vnd.github.v3+json" "' .. url .. '" 2>/dev/null')
+    if handle then
+        body = handle:read("*a")
+        handle:close()
+    end
 end
 
-local body = handle:read("*a")
-handle:close()
-
 if body and #body > 0 then
-    -- Extract tag_name from JSON (simple pattern match, no JSON lib needed)
     local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
     if tag then
-        love.thread.getChannel("updater"):push(tag)
+        channel:push(tag)
         return
     end
 end
 
-love.thread.getChannel("updater"):push("error")
-]]
+channel:push("error")
+]==]
 
 function updater.checkForUpdates()
     if version == "0.0.0-dev" then return end  -- skip in dev mode
