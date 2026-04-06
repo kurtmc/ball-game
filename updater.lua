@@ -28,18 +28,55 @@ local thread = nil
 
 local thread_code = [==[
 local url = ...
-require("love.system")
 local channel = love.thread.getChannel("updater")
 
-local os_name = love.system.getOS()
+-- Try native Lua HTTPS first (LuaSec bundled with many LÖVE builds)
+local ok, https = pcall(require, "ssl.https")
+local ltn12_ok, ltn12 = pcall(require, "ltn12")
 
+if ok and ltn12_ok then
+    local chunks = {}
+    local _, status = https.request({
+        url = url,
+        headers = { ["Accept"] = "application/vnd.github.v3+json" },
+        sink = ltn12.sink.table(chunks),
+        protocol = "tlsv1_2",
+    })
+    if status == 200 and #chunks > 0 then
+        local body = table.concat(chunks)
+        local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
+        local installer_url = nil
+        local installer_size = "0"
+        for u in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
+            installer_url = u
+            break
+        end
+        if installer_url then
+            local pattern = '"size"%s*:%s*(%d+).-"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '"'
+            local size_match = body:match(pattern)
+            if not size_match then
+                pattern = '"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '".-"size"%s*:%s*(%d+)'
+                size_match = body:match(pattern)
+            end
+            installer_size = size_match or "0"
+        end
+        if tag then
+            channel:push(tag .. "|" .. (installer_url or "") .. "|" .. installer_size)
+            return
+        end
+    end
+    channel:push("error")
+    return
+end
+
+-- Fallback: shell out to curl or PowerShell
+require("love.system")
+local os_name = love.system.getOS()
 local body = nil
 
 if os_name == "Windows" then
-    -- Use PowerShell hidden window to make HTTPS request, write to %TEMP%
     local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
     local out_path = temp .. "\\ballz_update_check.txt"
-    -- Clean up any stale file
     os.remove(out_path)
     local cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
         .. "try { "
@@ -49,7 +86,6 @@ if os_name == "Windows" then
         .. " } catch { }"
         .. '"'
     os.execute(cmd)
-
     local rf = io.open(out_path, "r")
     if rf then
         body = rf:read("*a")
@@ -57,7 +93,6 @@ if os_name == "Windows" then
         os.remove(out_path)
     end
 else
-    -- Unix: use curl directly (no window flash issue)
     local handle = io.popen('curl -s -L -H "Accept: application/vnd.github.v3+json" "' .. url .. '" 2>/dev/null')
     if handle then
         body = handle:read("*a")
@@ -67,21 +102,16 @@ end
 
 if body and #body > 0 then
     local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
-    -- Find the setup exe asset: extract size and download URL
-    -- Look for the asset block containing "setup" and ".exe"
     local installer_url = nil
     local installer_size = "0"
     for asset_block in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
         installer_url = asset_block
         break
     end
-    -- Extract size for the matching asset (search for size near the URL)
     if installer_url then
-        -- Find the asset object containing this URL and extract its size
         local pattern = '"size"%s*:%s*(%d+).-"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '"'
         local size_match = body:match(pattern)
         if not size_match then
-            -- Try reverse order (size may come after URL)
             pattern = '"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '".-"size"%s*:%s*(%d+)'
             size_match = body:match(pattern)
         end
@@ -100,39 +130,87 @@ local download_channel = nil
 local download_thread = nil
 
 local download_thread_code = [==[
-local installer_url = ...
-require("love.system")
+local installer_url, total_size_str = ...
 local channel = love.thread.getChannel("updater_download")
+local total_size = tonumber(total_size_str) or 0
 
+-- Try native Lua HTTPS with chunked progress reporting
+local ok, https = pcall(require, "ssl.https")
+local ltn12_ok, ltn12 = pcall(require, "ltn12")
+local http_ok, http = pcall(require, "socket.http")
+
+if ok and ltn12_ok and http_ok then
+    require("love.system")
+    local os_name = love.system.getOS()
+    local temp
+    if os_name == "Windows" then
+        temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
+    else
+        temp = "/tmp"
+    end
+    local installer_path = temp .. (os_name == "Windows" and "\\ballz-setup.exe" or "/ballz-setup")
+    os.remove(installer_path)
+
+    local file = io.open(installer_path, "wb")
+    if not file then
+        channel:push("error")
+        return
+    end
+
+    local bytes_written = 0
+    -- Custom ltn12 sink: writes chunks to file and pushes progress to channel
+    local progress_sink = function(chunk, err)
+        if chunk then
+            file:write(chunk)
+            bytes_written = bytes_written + #chunk
+            channel:push("progress|" .. bytes_written)
+            return 1
+        else
+            file:close()
+            return nil, err
+        end
+    end
+
+    -- Allow redirects (GitHub CDN)
+    http.TIMEOUT = 60
+    local _, status = https.request({
+        url = installer_url,
+        sink = progress_sink,
+        protocol = "tlsv1_2",
+        redirect = true,
+    })
+
+    if status == 200 and bytes_written > 10000 then
+        if os_name == "Windows" then
+            channel:push("ok|" .. installer_path)
+        else
+            channel:push("noinstaller")
+        end
+    else
+        os.remove(installer_path)
+        channel:push("error")
+    end
+    return
+end
+
+-- Fallback: shell out to PowerShell (Windows) or open URL (other)
+require("love.system")
 local os_name = love.system.getOS()
 
 if os_name == "Windows" then
     local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
     local installer_path = temp .. "\\ballz-setup.exe"
     os.remove(installer_path)
-
-    -- Tell main thread where the file is being written so it can poll size
     channel:push("path|" .. installer_path)
 
-    -- Use curl.exe (ships with Windows 10+) which writes progressively to disk,
-    -- enabling the main thread to poll file size for the progress bar.
-    -- Fall back to PowerShell if curl is not available.
-    local curl_cmd = 'curl.exe -s -L -o "' .. installer_path .. '" "' .. installer_url .. '"'
-    local ok = os.execute(curl_cmd)
+    local ps_cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
+        .. "try { "
+        .. "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
+        .. "Invoke-WebRequest -Uri '" .. installer_url .. "' -OutFile '" .. installer_path .. "' -UseBasicParsing"
+        .. " } catch { }"
+        .. '"'
+    os.execute(ps_cmd)
 
-    if not ok then
-        -- Fallback: PowerShell (no progress polling possible, but download works)
-        os.remove(installer_path)
-        local ps_cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
-            .. "try { "
-            .. "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
-            .. "Invoke-WebRequest -Uri '" .. installer_url .. "' -OutFile '" .. installer_path .. "' -UseBasicParsing"
-            .. " } catch { }"
-            .. '"'
-        os.execute(ps_cmd)
-    end
-
-    -- Check if file was downloaded
     local f = io.open(installer_path, "r")
     if f then
         local size = f:seek("end")
@@ -144,7 +222,6 @@ if os_name == "Windows" then
     end
     channel:push("error")
 else
-    -- Non-Windows: just report the URL, can't auto-install
     channel:push("noinstaller")
 end
 ]==]
@@ -162,7 +239,7 @@ function updater.startDownload()
     download_channel = love.thread.getChannel("updater_download")
     while download_channel:pop() do end
     download_thread = love.thread.newThread(download_thread_code)
-    download_thread:start(updater.installer_url)
+    download_thread:start(updater.installer_url, tostring(updater.installer_size or 0))
 end
 
 function updater.checkForUpdates()
@@ -230,17 +307,19 @@ function updater.update(dt)
 
     -- Poll download thread
     if updater.downloading and download_channel then
-        -- Check all pending messages from the download thread
+        -- Drain all pending messages from the download thread
         local dl_result = download_channel:pop()
         while dl_result do
-            if dl_result:sub(1, 5) == "path|" then
-                -- Thread is telling us where the file is being written
+            if dl_result:sub(1, 9) == "progress|" then
+                -- Native download: real-time byte count from chunked sink
+                updater.download_progress = tonumber(dl_result:sub(10)) or 0
+            elseif dl_result:sub(1, 5) == "path|" then
+                -- Fallback download: file path for polling
                 updater.download_path = dl_result:match("^path|(.+)$")
             elseif dl_result:sub(1, 2) == "ok" then
                 updater.downloading = false
                 updater.download_progress = updater.download_total
                 local installer_path = dl_result:match("^ok|(.+)$")
-                -- Launch installer and quit
                 os.execute('start "" "' .. installer_path .. '"')
                 love.event.quit()
                 return
@@ -257,7 +336,7 @@ function updater.update(dt)
             dl_result = download_channel:pop()
         end
 
-        -- Poll file size for progress bar
+        -- Fallback: poll file size when using curl/PowerShell
         if updater.download_path and updater.download_total > 0 then
             updater.download_poll_timer = updater.download_poll_timer + dt
             if updater.download_poll_timer >= 0.25 then
