@@ -337,6 +337,17 @@ function handlers.collecting.update(game, dt)
             game.shake_intensity = 5
         end
 
+        -- Remove void blocks within 3 rows of the bottom
+        for r = G.ROWS - 2, G.ROWS + 1 do
+            if game.grid[r] then
+                for c = 1, G.COLS do
+                    if game.grid[r][c] and game.grid[r][c].void then
+                        game.grid[r][c] = nil
+                    end
+                end
+            end
+        end
+
         -- Remove mutagens that went off grid
         for i = #game.mutagens, 1, -1 do
             if game.mutagens[i].row > G.ROWS then
