@@ -156,7 +156,22 @@ function love.resize(w, h)
     scaling.update()
 end
 
+local RESIZE_STEP = 100
+
 function love.keypressed(key)
     if updater.keypressed(key) then return end
+    if key == "=" or key == "kp+" then
+        local w, h = love.graphics.getDimensions()
+        love.window.setMode(w + RESIZE_STEP, h + RESIZE_STEP, {resizable = true, minwidth = 400, minheight = 400})
+        scaling.update()
+        return
+    elseif key == "-" or key == "kp-" then
+        local w, h = love.graphics.getDimensions()
+        local nw = math.max(400, w - RESIZE_STEP)
+        local nh = math.max(400, h - RESIZE_STEP)
+        love.window.setMode(nw, nh, {resizable = true, minwidth = 400, minheight = 400})
+        scaling.update()
+        return
+    end
     states.keypressed(game, key)
 end
