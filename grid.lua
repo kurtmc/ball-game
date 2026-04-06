@@ -54,8 +54,14 @@ function grid.generateRow(level)
     local max_blocks = util.clamp(4 + tier, 4, grid.COLS)
     local num_blocks = math.random(min_blocks, max_blocks)
 
-    -- HP multiplier ramps with tier: 1.0x, 1.3x, 1.6x, 2.0x, ...
-    local hp_mult = 1.0 + tier * 0.3
+    -- HP multiplier ramps with tier: 1.0x, 1.3x, 1.6x, 1.9x, 2.2x ...
+    -- Post tier 4 (level 50+): steeper ramp to match mutation power
+    local hp_mult
+    if tier <= 4 then
+        hp_mult = 1.0 + tier * 0.3
+    else
+        hp_mult = 1.0 + 4 * 0.3 + (tier - 4) * 0.5
+    end
 
     local blocks = {}
     for i = 1, num_blocks do
@@ -66,15 +72,45 @@ function grid.generateRow(level)
     end
 
     -- Fewer pickups at higher tiers: always 1-2 early, sometimes 0-1 later
-    local pickup_min = tier >= 3 and 0 or 1
-    local pickup_max = tier >= 2 and 1 or 2
+    -- Post-50: even fewer ball pickups (mutations compensate)
+    local pickup_min, pickup_max
+    if level > 50 then
+        pickup_min = 0
+        pickup_max = 1
+    elseif tier >= 3 then
+        pickup_min = 0
+        pickup_max = 1
+    elseif tier >= 2 then
+        pickup_min = 1
+        pickup_max = 1
+    else
+        pickup_min = 1
+        pickup_max = 2
+    end
     local num_pickups = math.random(pickup_min, pickup_max)
     local pickups = {}
-    for i = num_blocks + 1, math.min(num_blocks + num_pickups, grid.COLS) do
+    local next_col = num_blocks + 1
+    for i = next_col, math.min(next_col + num_pickups - 1, grid.COLS) do
         table.insert(pickups, { col = cols[i] })
     end
+    next_col = next_col + num_pickups
 
-    return blocks, pickups
+    -- Mutagen orbs: only in Chaos Zone (level > 50), ~35% chance per row
+    -- Type is filled in by caller (states.lua) to avoid circular dependency
+    local mutagens = {}
+    if level > 50 and next_col <= grid.COLS and math.random() < 0.35 then
+        table.insert(mutagens, { col = cols[next_col] })
+        next_col = next_col + 1
+    end
+
+    -- Void blocks: only in Chaos Zone, ~30% chance per row, max 1
+    local void_block = nil
+    if level > 50 and next_col <= grid.COLS and math.random() < 0.30 then
+        void_block = { col = cols[next_col] }
+        next_col = next_col + 1
+    end
+
+    return blocks, pickups, mutagens, void_block
 end
 
 return grid

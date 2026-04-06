@@ -39,6 +39,24 @@ function particles.draw()
     end
 end
 
+-- Void absorb: dark implosion (particles move INWARD)
+function particles.spawnVoidAbsorb(x, y)
+    for _ = 1, 12 do
+        local angle = math.random() * math.pi * 2
+        local dist = math.random(20, 40)
+        table.insert(active, {
+            x = x + math.cos(angle) * dist,
+            y = y + math.sin(angle) * dist,
+            vx = -math.cos(angle) * 150,
+            vy = -math.sin(angle) * 150,
+            size = math.random(2, 5),
+            r = 0.4, g = 0.1, b = 0.6,
+            life = 0.4,
+            maxLife = 0.5,
+        })
+    end
+end
+
 function particles.clear()
     active = {}
 end

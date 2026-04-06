@@ -4,6 +4,10 @@ local wallBounce
 local blockHits = {}  -- indexed by combo level
 local destroySound
 local pickupSound
+local mutagenSound
+local chainExplosionSound
+local voidAbsorbSound
+local chaosAnnounceSound
 
 local NUM_HIT_TONES = 20
 
@@ -53,6 +57,18 @@ function audio.load()
 
     -- Pickup collect: pleasant chime
     pickupSound = generateTone(880, 0.15, 0.25, 2)
+
+    -- Mutagen collect: deep warbling tone
+    mutagenSound = generateTone(300, 0.25, 0.3, 2)
+
+    -- Chain explosion: rumbling boom
+    chainExplosionSound = generateNoise(0.3, 0.3)
+
+    -- Void absorb: low dark whoosh
+    voidAbsorbSound = generateTone(150, 0.2, 0.25, 3)
+
+    -- Chaos announce: dramatic ascending tone
+    chaosAnnounceSound = generateTone(600, 0.3, 0.25, 2)
 end
 
 local function playSound(source)
@@ -76,6 +92,22 @@ end
 
 function audio.playPickup()
     playSound(pickupSound)
+end
+
+function audio.playMutagenPickup()
+    playSound(mutagenSound)
+end
+
+function audio.playChainExplosion()
+    playSound(chainExplosionSound)
+end
+
+function audio.playVoidAbsorb()
+    playSound(voidAbsorbSound)
+end
+
+function audio.playChaosAnnounce()
+    playSound(chaosAnnounceSound)
 end
 
 return audio

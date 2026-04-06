@@ -8,17 +8,18 @@ local EPSILON = 1e-6
 -- with walls or blocks. Returns: hit_time, hit_type, hit_data
 -- hit_type: "wall_left", "wall_right", "wall_top", "floor", "block"
 -- hit_data for block: {col, row, face} where face is "left","right","top","bottom"
-function physics.castRay(ox, oy, dx, dy, grid_data, max_time)
+function physics.castRay(ox, oy, dx, dy, grid_data, max_time, ball_radius)
     max_time = max_time or 999
+    ball_radius = ball_radius or G.BALL_RADIUS
 
     local best_t = max_time
     local best_type = nil
     local best_data = nil
 
-    -- Wall collisions (treating ball as point, walls inset by BALL_RADIUS)
-    local left_wall  = G.GRID_LEFT + G.BALL_RADIUS
-    local right_wall = G.GRID_RIGHT - G.BALL_RADIUS
-    local top_wall   = G.GRID_TOP + G.BALL_RADIUS
+    -- Wall collisions (treating ball as point, walls inset by ball_radius)
+    local left_wall  = G.GRID_LEFT + ball_radius
+    local right_wall = G.GRID_RIGHT - ball_radius
+    local top_wall   = G.GRID_TOP + ball_radius
     local floor_line = G.FLOOR_Y
 
     -- Left wall
@@ -70,10 +71,10 @@ function physics.castRay(ox, oy, dx, dy, grid_data, max_time)
                     if block then
                         local bx, by, bw, bh = G.blockRect(c, r)
                         -- Expand by ball radius (Minkowski sum)
-                        local ex = bx - G.BALL_RADIUS
-                        local ey = by - G.BALL_RADIUS
-                        local ew = bw + 2 * G.BALL_RADIUS
-                        local eh = bh + 2 * G.BALL_RADIUS
+                        local ex = bx - ball_radius
+                        local ey = by - ball_radius
+                        local ew = bw + 2 * ball_radius
+                        local eh = bh + 2 * ball_radius
 
                         -- Slab test
                         local t_x_enter, t_x_exit, t_y_enter, t_y_exit
