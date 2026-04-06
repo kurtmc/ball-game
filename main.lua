@@ -128,14 +128,16 @@ function love.draw()
 
     scaling.pop()
 
-    -- Draw update banner on top of everything (outside scaling transform)
+    -- Draw update banner on top of everything (inside scaling but outside shake)
+    scaling.push()
     updater.draw()
+    scaling.pop()
 end
 
 function love.mousepressed(x, y, button)
     if button == 1 then
-        if updater.mousepressed(x, y) then return end
         local gx, gy = scaling.toGame(x, y)
+        if updater.mousepressed(gx, gy) then return end
         states.mousepressed(game, gx, gy)
     end
 end
