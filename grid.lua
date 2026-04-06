@@ -49,9 +49,9 @@ function grid.generateRow(level)
     for i = 1, grid.COLS do cols[i] = i end
     util.shuffle(cols)
 
-    -- More blocks per row at higher tiers: 3-4 → 3-5 → 4-6 → 5-7
-    local min_blocks = util.clamp(3 + tier, 3, 5)
-    local max_blocks = util.clamp(4 + tier, 4, grid.COLS)
+    -- Blocks per row: keep sparse so gaps are plentiful: 2-3 → 2-4 → 3-4
+    local min_blocks = util.clamp(2 + math.floor(tier / 2), 2, 3)
+    local max_blocks = util.clamp(3 + math.floor(tier / 2), 3, 4)
     local num_blocks = math.random(min_blocks, max_blocks)
 
     -- HP multiplier ramps with tier: 1.0x, 1.3x, 1.6x, 1.9x, 2.2x ...
