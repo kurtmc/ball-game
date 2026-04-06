@@ -135,10 +135,12 @@ function ui.drawGrid(game)
     local offset_y = game.descend_offset or 0
     local time = love.timer.getTime()
 
-    -- Draw floor line
+    -- Draw boundary lines (left, right, floor)
     love.graphics.setColor(0.3, 0.3, 0.4)
     love.graphics.setLineWidth(2)
-    love.graphics.line(G.GRID_LEFT, G.FLOOR_Y, G.GRID_RIGHT, G.FLOOR_Y)
+    love.graphics.line(G.GRID_LEFT, G.GRID_TOP, G.GRID_LEFT, G.FLOOR_Y)    -- left wall
+    love.graphics.line(G.GRID_RIGHT, G.GRID_TOP, G.GRID_RIGHT, G.FLOOR_Y)  -- right wall
+    love.graphics.line(G.GRID_LEFT, G.FLOOR_Y, G.GRID_RIGHT, G.FLOOR_Y)    -- floor
     love.graphics.setLineWidth(1)
 
     -- Draw blocks
