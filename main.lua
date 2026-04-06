@@ -3,6 +3,7 @@ local states = require("states")
 local ui = require("ui")
 local particles = require("particles")
 local updater = require("updater")
+local scaling = require("scaling")
 
 local game = {}
 local dev_mode = false
@@ -11,7 +12,6 @@ local normal_bg = {0.08, 0.08, 0.12}
 local chaos_bg  = {0.12, 0.05, 0.15}
 
 local function resetGame()
-    love.graphics.setBackgroundColor(unpack(normal_bg))
     game.state          = "aiming"
     game.level          = 1
     game.score          = 0
@@ -68,7 +68,7 @@ local function resetGame()
 end
 
 function love.load()
-    love.graphics.setBackgroundColor(unpack(normal_bg))
+    love.graphics.setBackgroundColor(0, 0, 0)
     math.randomseed(os.time())
     dev_mode = not love.filesystem.isFused()
     ui.load()
@@ -78,6 +78,7 @@ function love.load()
     game.resetGame = resetGame
     game.dev_mode = dev_mode
     updater.checkForUpdates()
+    scaling.update()
 end
 
 function love.update(dt)
@@ -98,14 +99,15 @@ function love.update(dt)
         game.chaos_zone_flash = game.chaos_zone_flash - dt
     end
 
-    -- Background color shift in chaos zone
-    if game.chaos_active then
-        love.graphics.setBackgroundColor(unpack(chaos_bg))
-    end
+    -- (background color handled in love.draw for scaling support)
 end
 
 function love.draw()
-    love.graphics.push()
+    -- Letterbox: fill bars with black
+    love.graphics.setColor(0, 0, 0)
+    love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+
+    scaling.push()
 
     -- Apply screen shake
     if game.shake_timer > 0 then
@@ -114,32 +116,44 @@ function love.draw()
         love.graphics.translate(sx, sy)
     end
 
+    -- Draw background for game area
+    local bg = game.chaos_active and chaos_bg or normal_bg
+    love.graphics.setColor(bg[1], bg[2], bg[3])
+    love.graphics.rectangle("fill", 0, 0, 800, 800)
+
     ui.drawGrid(game)
     states.draw(game)
     particles.draw()
     ui.drawHUD(game)
 
-    love.graphics.pop()
+    scaling.pop()
 
-    -- Draw update banner on top of everything (outside shake transform)
+    -- Draw update banner on top of everything (outside scaling transform)
     updater.draw()
 end
 
 function love.mousepressed(x, y, button)
     if button == 1 then
         if updater.mousepressed(x, y) then return end
-        states.mousepressed(game, x, y)
+        local gx, gy = scaling.toGame(x, y)
+        states.mousepressed(game, gx, gy)
     end
 end
 
 function love.mousemoved(x, y)
-    states.mousemoved(game, x, y)
+    local gx, gy = scaling.toGame(x, y)
+    states.mousemoved(game, gx, gy)
 end
 
 function love.mousereleased(x, y, button)
     if button == 1 then
-        states.mousereleased(game, x, y)
+        local gx, gy = scaling.toGame(x, y)
+        states.mousereleased(game, gx, gy)
     end
+end
+
+function love.resize(w, h)
+    scaling.update()
 end
 
 function love.keypressed(key)
