@@ -114,13 +114,23 @@ if os_name == "Windows" then
     -- Tell main thread where the file is being written so it can poll size
     channel:push("path|" .. installer_path)
 
-    local cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
-        .. "try { "
-        .. "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
-        .. "Invoke-WebRequest -Uri '" .. installer_url .. "' -OutFile '" .. installer_path .. "' -UseBasicParsing"
-        .. " } catch { }"
-        .. '"'
-    os.execute(cmd)
+    -- Use curl.exe (ships with Windows 10+) which writes progressively to disk,
+    -- enabling the main thread to poll file size for the progress bar.
+    -- Fall back to PowerShell if curl is not available.
+    local curl_cmd = 'curl.exe -s -L -o "' .. installer_path .. '" "' .. installer_url .. '"'
+    local ok = os.execute(curl_cmd)
+
+    if not ok then
+        -- Fallback: PowerShell (no progress polling possible, but download works)
+        os.remove(installer_path)
+        local ps_cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
+            .. "try { "
+            .. "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
+            .. "Invoke-WebRequest -Uri '" .. installer_url .. "' -OutFile '" .. installer_path .. "' -UseBasicParsing"
+            .. " } catch { }"
+            .. '"'
+        os.execute(ps_cmd)
+    end
 
     -- Check if file was downloaded
     local f = io.open(installer_path, "r")
