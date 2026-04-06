@@ -10,11 +10,16 @@ updater.current_version = version
 updater.latest_version = nil
 updater.update_available = false
 updater.installer_url = nil
+updater.installer_size = nil
 updater.check_done = false
 updater.dismissed = false
 updater.checking = false
 updater.check_failed = false
 updater.downloading = false
+updater.download_path = nil
+updater.download_progress = 0
+updater.download_total = 0
+updater.download_poll_timer = 0
 updater.status_message = nil
 updater.status_timer = 0
 
@@ -62,10 +67,28 @@ end
 
 if body and #body > 0 then
     local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
-    -- Find the setup exe download URL
-    local installer_url = body:match('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"')
+    -- Find the setup exe asset: extract size and download URL
+    -- Look for the asset block containing "setup" and ".exe"
+    local installer_url = nil
+    local installer_size = "0"
+    for asset_block in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
+        installer_url = asset_block
+        break
+    end
+    -- Extract size for the matching asset (search for size near the URL)
+    if installer_url then
+        -- Find the asset object containing this URL and extract its size
+        local pattern = '"size"%s*:%s*(%d+).-"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '"'
+        local size_match = body:match(pattern)
+        if not size_match then
+            -- Try reverse order (size may come after URL)
+            pattern = '"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '".-"size"%s*:%s*(%d+)'
+            size_match = body:match(pattern)
+        end
+        installer_size = size_match or "0"
+    end
     if tag then
-        channel:push(tag .. "|" .. (installer_url or ""))
+        channel:push(tag .. "|" .. (installer_url or "") .. "|" .. installer_size)
         return
     end
 end
@@ -87,6 +110,9 @@ if os_name == "Windows" then
     local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
     local installer_path = temp .. "\\ballz-setup.exe"
     os.remove(installer_path)
+
+    -- Tell main thread where the file is being written so it can poll size
+    channel:push("path|" .. installer_path)
 
     local cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
         .. "try { "
@@ -116,6 +142,10 @@ end
 function updater.startDownload()
     if updater.downloading or not updater.installer_url then return end
     updater.downloading = true
+    updater.download_progress = 0
+    updater.download_total = updater.installer_size or 0
+    updater.download_path = nil
+    updater.download_poll_timer = 0
     updater.status_message = "Downloading update..."
     updater.status_timer = 999
 
@@ -163,9 +193,10 @@ function updater.update(dt)
         updater.check_done = true
         updater.checking = false
         if result ~= "error" then
-            local tag, installer = result:match("^([^|]+)|(.*)$")
+            local tag, installer, size_str = result:match("^([^|]+)|([^|]*)|?(.*)$")
             updater.latest_version = tag or result
             updater.installer_url = (installer and #installer > 0) and installer or nil
+            updater.installer_size = tonumber(size_str) or 0
             updater.update_available = compareVersions(updater.current_version, updater.latest_version)
             if not updater.update_available then
                 updater.status_message = "You're up to date! (" .. updater.current_version .. ")"
@@ -189,22 +220,46 @@ function updater.update(dt)
 
     -- Poll download thread
     if updater.downloading and download_channel then
+        -- Check all pending messages from the download thread
         local dl_result = download_channel:pop()
-        if dl_result then
-            updater.downloading = false
-            if dl_result:sub(1, 2) == "ok" then
+        while dl_result do
+            if dl_result:sub(1, 5) == "path|" then
+                -- Thread is telling us where the file is being written
+                updater.download_path = dl_result:match("^path|(.+)$")
+            elseif dl_result:sub(1, 2) == "ok" then
+                updater.downloading = false
+                updater.download_progress = updater.download_total
                 local installer_path = dl_result:match("^ok|(.+)$")
                 -- Launch installer and quit
                 os.execute('start "" "' .. installer_path .. '"')
                 love.event.quit()
+                return
             elseif dl_result == "noinstaller" then
-                -- Fallback for non-Windows
+                updater.downloading = false
                 love.system.openURL(RELEASES_URL)
+                return
             else
+                updater.downloading = false
                 updater.status_message = "Download failed"
                 updater.status_timer = 4
+                return
+            end
+            dl_result = download_channel:pop()
+        end
+
+        -- Poll file size for progress bar
+        if updater.download_path and updater.download_total > 0 then
+            updater.download_poll_timer = updater.download_poll_timer + dt
+            if updater.download_poll_timer >= 0.25 then
+                updater.download_poll_timer = 0
+                local f = io.open(updater.download_path, "rb")
+                if f then
+                    updater.download_progress = f:seek("end") or 0
+                    f:close()
+                end
             end
         end
+
         if download_thread and download_thread:getError() then
             updater.downloading = false
             updater.status_message = "Download failed"
@@ -278,14 +333,38 @@ function updater.draw()
         love.graphics.setColor(0.15, 0.5, 0.15, 0.9)
         love.graphics.rectangle("fill", 0, 0, w, banner_h)
 
-        love.graphics.setColor(1, 1, 1)
-        local msg
-        if updater.downloading then
-            msg = "Downloading " .. (updater.latest_version or "") .. "..."
+        if updater.downloading and updater.download_total > 0 then
+            -- Progress bar
+            local bar_x, bar_y = 100, 20
+            local bar_w, bar_h = w - 200, 6
+            local fraction = math.min(updater.download_progress / updater.download_total, 1)
+            local mb_done = updater.download_progress / (1024 * 1024)
+            local mb_total = updater.download_total / (1024 * 1024)
+            local pct = math.floor(fraction * 100)
+
+            -- Text
+            love.graphics.setColor(1, 1, 1)
+            local msg = string.format("Downloading %s... %.1f / %.1f MB (%d%%)",
+                updater.latest_version or "", mb_done, mb_total, pct)
+            love.graphics.printf(msg, 10, 3, w - 20, "center")
+
+            -- Bar background
+            love.graphics.setColor(0.1, 0.3, 0.1, 0.8)
+            love.graphics.rectangle("fill", bar_x, bar_y, bar_w, bar_h, 3, 3)
+            -- Bar fill
+            love.graphics.setColor(0.3, 1.0, 0.3, 0.9)
+            love.graphics.rectangle("fill", bar_x, bar_y, bar_w * fraction, bar_h, 3, 3)
+        elseif updater.downloading then
+            -- Downloading but no size info — show indeterminate message
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.printf("Downloading " .. (updater.latest_version or "") .. "...",
+                10, 7, w - 20, "center")
         else
-            msg = "Update available: " .. (updater.latest_version or "") .. "  |  Press [U] to install  |  [X] to dismiss"
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.printf("Update available: " .. (updater.latest_version or "")
+                .. "  |  Press [U] to install  |  [X] to dismiss",
+                10, 7, w - 20, "center")
         end
-        love.graphics.printf(msg, 10, 7, w - 20, "center")
     end
 end
 
