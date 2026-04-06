@@ -192,7 +192,10 @@ function handlers.launching.mousemoved() end
 function handlers.launching.mousereleased() end
 function handlers.launching.keypressed(game, key)
     if key == "space" then
-        game.speed_mult = game.speed_mult == 1 and 3 or 1
+        if game.speed_mult == 1 then game.speed_mult = 3
+        elseif game.speed_mult == 3 then game.speed_mult = 6
+        elseif game.speed_mult == 6 then game.speed_mult = 9
+        else game.speed_mult = 1 end
     end
 end
 
@@ -229,7 +232,10 @@ function handlers.resolving.mousemoved() end
 function handlers.resolving.mousereleased() end
 function handlers.resolving.keypressed(game, key)
     if key == "space" then
-        game.speed_mult = game.speed_mult == 1 and 3 or 1
+        if game.speed_mult == 1 then game.speed_mult = 3
+        elseif game.speed_mult == 3 then game.speed_mult = 6
+        elseif game.speed_mult == 6 then game.speed_mult = 9
+        else game.speed_mult = 1 end
     end
 end
 
