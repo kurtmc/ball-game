@@ -30,6 +30,44 @@ local thread_code = [==[
 local url = ...
 local channel = love.thread.getChannel("updater")
 
+-- Detect OS for choosing the right asset type
+require("love.system")
+local os_name = love.system.getOS()
+
+local function findAssetInBody(body)
+    local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
+    if not tag then return nil end
+
+    local installer_url = nil
+    local installer_size = "0"
+
+    -- Search for the appropriate asset based on OS
+    if os_name == "Linux" then
+        for u in body:gmatch('"browser_download_url"%s*:%s*"([^"]*%.AppImage)"') do
+            installer_url = u
+            break
+        end
+    else
+        for u in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
+            installer_url = u
+            break
+        end
+    end
+
+    if installer_url then
+        local escaped = installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0")
+        local pattern = '"size"%s*:%s*(%d+).-"browser_download_url"%s*:%s*"' .. escaped .. '"'
+        local size_match = body:match(pattern)
+        if not size_match then
+            pattern = '"browser_download_url"%s*:%s*"' .. escaped .. '".-"size"%s*:%s*(%d+)'
+            size_match = body:match(pattern)
+        end
+        installer_size = size_match or "0"
+    end
+
+    return tag .. "|" .. (installer_url or "") .. "|" .. installer_size
+end
+
 -- Try native Lua HTTPS first (LuaSec bundled with many LÖVE builds)
 local ok, https = pcall(require, "ssl.https")
 local ltn12_ok, ltn12 = pcall(require, "ltn12")
@@ -44,24 +82,9 @@ if ok and ltn12_ok then
     })
     if status == 200 and #chunks > 0 then
         local body = table.concat(chunks)
-        local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
-        local installer_url = nil
-        local installer_size = "0"
-        for u in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
-            installer_url = u
-            break
-        end
-        if installer_url then
-            local pattern = '"size"%s*:%s*(%d+).-"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '"'
-            local size_match = body:match(pattern)
-            if not size_match then
-                pattern = '"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '".-"size"%s*:%s*(%d+)'
-                size_match = body:match(pattern)
-            end
-            installer_size = size_match or "0"
-        end
-        if tag then
-            channel:push(tag .. "|" .. (installer_url or "") .. "|" .. installer_size)
+        local result = findAssetInBody(body)
+        if result then
+            channel:push(result)
             return
         end
     end
@@ -70,8 +93,6 @@ if ok and ltn12_ok then
 end
 
 -- Fallback: shell out to curl or PowerShell
-require("love.system")
-local os_name = love.system.getOS()
 local body = nil
 
 if os_name == "Windows" then
@@ -101,24 +122,9 @@ else
 end
 
 if body and #body > 0 then
-    local tag = body:match('"tag_name"%s*:%s*"([^"]+)"')
-    local installer_url = nil
-    local installer_size = "0"
-    for asset_block in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
-        installer_url = asset_block
-        break
-    end
-    if installer_url then
-        local pattern = '"size"%s*:%s*(%d+).-"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '"'
-        local size_match = body:match(pattern)
-        if not size_match then
-            pattern = '"browser_download_url"%s*:%s*"' .. installer_url:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0") .. '".-"size"%s*:%s*(%d+)'
-            size_match = body:match(pattern)
-        end
-        installer_size = size_match or "0"
-    end
-    if tag then
-        channel:push(tag .. "|" .. (installer_url or "") .. "|" .. installer_size)
+    local result = findAssetInBody(body)
+    if result then
+        channel:push(result)
         return
     end
 end
@@ -134,23 +140,47 @@ local installer_url, total_size_str = ...
 local channel = love.thread.getChannel("updater_download")
 local total_size = tonumber(total_size_str) or 0
 
+require("love.system")
+local os_name = love.system.getOS()
+
+local temp
+if os_name == "Windows" then
+    temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
+else
+    temp = "/tmp"
+end
+
+local installer_path
+if os_name == "Windows" then
+    installer_path = temp .. "\\ballz-setup.exe"
+elseif os_name == "Linux" then
+    installer_path = temp .. "/ballz-update.AppImage"
+else
+    installer_path = temp .. "/ballz-update"
+end
+os.remove(installer_path)
+
+local function finishLinuxInstall(path)
+    os.execute('chmod +x "' .. path .. '"')
+    local appimage_path = os.getenv("APPIMAGE")
+    if appimage_path and #appimage_path > 0 then
+        -- Unlink old file first (still held open by running FUSE mount),
+        -- then copy new file to create a fresh inode at the same path
+        local status = os.execute('rm -f "' .. appimage_path .. '" && cp "' .. path .. '" "' .. appimage_path .. '" && chmod +x "' .. appimage_path .. '"')
+        if status == 0 or status == true then
+            os.remove(path)
+            return appimage_path
+        end
+    end
+    return path
+end
+
 -- Try native Lua HTTPS with chunked progress reporting
 local ok, https = pcall(require, "ssl.https")
 local ltn12_ok, ltn12 = pcall(require, "ltn12")
 local http_ok, http = pcall(require, "socket.http")
 
 if ok and ltn12_ok and http_ok then
-    require("love.system")
-    local os_name = love.system.getOS()
-    local temp
-    if os_name == "Windows" then
-        temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
-    else
-        temp = "/tmp"
-    end
-    local installer_path = temp .. (os_name == "Windows" and "\\ballz-setup.exe" or "/ballz-setup")
-    os.remove(installer_path)
-
     local file = io.open(installer_path, "wb")
     if not file then
         channel:push("error")
@@ -183,6 +213,9 @@ if ok and ltn12_ok and http_ok then
     if status == 200 and bytes_written > 10000 then
         if os_name == "Windows" then
             channel:push("ok|" .. installer_path)
+        elseif os_name == "Linux" then
+            local final_path = finishLinuxInstall(installer_path)
+            channel:push("ok|" .. final_path)
         else
             channel:push("noinstaller")
         end
@@ -193,14 +226,8 @@ if ok and ltn12_ok and http_ok then
     return
 end
 
--- Fallback: shell out to PowerShell (Windows) or open URL (other)
-require("love.system")
-local os_name = love.system.getOS()
-
+-- Fallback: shell out to PowerShell (Windows), curl (Linux), or open URL (other)
 if os_name == "Windows" then
-    local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Windows\\Temp"
-    local installer_path = temp .. "\\ballz-setup.exe"
-    os.remove(installer_path)
     channel:push("path|" .. installer_path)
 
     local ps_cmd = 'powershell -NoProfile -NoLogo -WindowStyle Hidden -Command "'
@@ -217,6 +244,21 @@ if os_name == "Windows" then
         f:close()
         if size and size > 10000 then
             channel:push("ok|" .. installer_path)
+            return
+        end
+    end
+    channel:push("error")
+elseif os_name == "Linux" then
+    channel:push("path|" .. installer_path)
+    os.execute('curl -s -L -o "' .. installer_path .. '" "' .. installer_url .. '"')
+
+    local f = io.open(installer_path, "r")
+    if f then
+        local size = f:seek("end")
+        f:close()
+        if size and size > 10000 then
+            local final_path = finishLinuxInstall(installer_path)
+            channel:push("ok|" .. final_path)
             return
         end
     end
@@ -320,7 +362,11 @@ function updater.update(dt)
                 updater.downloading = false
                 updater.download_progress = updater.download_total
                 local installer_path = dl_result:match("^ok|(.+)$")
-                os.execute('start "" "' .. installer_path .. '"')
+                if love.system.getOS() == "Windows" then
+                    os.execute('start "" "' .. installer_path .. '"')
+                else
+                    os.execute('"' .. installer_path .. '" &')
+                end
                 love.event.quit()
                 return
             elseif dl_result == "noinstaller" then

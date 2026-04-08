@@ -8,8 +8,11 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v4
@@ -87,13 +90,88 @@ jobs:
         run: |
           "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Ballz ${{ steps.version.outputs.tag }}
-          files: |
+          name: windows-build
+          path: |
             ballz-win64.zip
             ballz.love
             output/ballz-setup-${{ steps.version.outputs.version }}.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="1.0.0-${SHORT_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version into game
+        run: |
+          echo "return \"${{ steps.version.outputs.version }}\"" > version.lua
+
+      - name: Create .love file
+        run: |
+          zip -9 ballz.love *.lua
+
+      - name: Download LOVE AppImage
+        run: |
+          LOVE_VERSION="11.5"
+          curl -L -o love.AppImage "https://github.com/love2d/love/releases/download/${LOVE_VERSION}/love-${LOVE_VERSION}-x86_64.AppImage"
+          chmod +x love.AppImage
+
+      - name: Build AppImage
+        run: |
+          # Extract LÖVE AppImage (works without FUSE)
+          ./love.AppImage --appimage-extract
+
+          # Embed game into the AppImage
+          cp ballz.love squashfs-root/
+
+          # Modify AppRun to launch our game instead of bare LÖVE
+          # Try quoted "$@" first, then unquoted $@
+          sed -i '/exec.*love/s|"\$@"|"${HERE:-${APPDIR}}/ballz.love" "$@"|' squashfs-root/AppRun
+          grep -q "ballz.love" squashfs-root/AppRun || \
+            sed -i '/exec.*love/s|\$@|"${HERE:-${APPDIR}}/ballz.love" $@|' squashfs-root/AppRun
+          # Verify the modification succeeded
+          grep -q "ballz.love" squashfs-root/AppRun || { echo "ERROR: Failed to modify AppRun"; cat squashfs-root/AppRun; exit 1; }
+
+          # Update desktop entry name
+          sed -i 's/^Name=.*/Name=Ballz/' squashfs-root/love.desktop
+
+          # Download appimagetool and build the final AppImage
+          curl -L -o appimagetool "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool squashfs-root/ ballz-x86_64.AppImage
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: ballz-x86_64.AppImage
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-windows.outputs.tag }}
+          name: Ballz ${{ needs.build-windows.outputs.tag }}
+          files: |
+            windows-build/ballz-win64.zip
+            windows-build/ballz.love
+            windows-build/output/ballz-setup-${{ needs.build-windows.outputs.version }}.exe
+            linux-build/ballz-x86_64.AppImage
           generate_release_notes: true
