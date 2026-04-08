@@ -145,16 +145,13 @@ jobs:
           head -c "$OFFSET" love.AppImage > runtime
           unsquashfs -offset "$OFFSET" -dest squashfs-root love.AppImage
 
-          # Embed game into the AppImage
-          cp ballz.love squashfs-root/
-
-          # Modify AppRun to launch our game instead of bare LÖVE
-          # Try quoted "$@" first, then unquoted $@
-          sed -i '/exec.*love/s|"\$@"|"${HERE:-${APPDIR}}/ballz.love" "$@"|' squashfs-root/AppRun
-          grep -q "ballz.love" squashfs-root/AppRun || \
-            sed -i '/exec.*love/s|\$@|"${HERE:-${APPDIR}}/ballz.love" $@|' squashfs-root/AppRun
-          # Verify the modification succeeded
-          grep -q "ballz.love" squashfs-root/AppRun || { echo "ERROR: Failed to modify AppRun"; cat squashfs-root/AppRun; exit 1; }
+          # Fuse the love binary with the game (append .love to the ELF binary)
+          # This makes love.filesystem.isFused() return true, same as the Windows build
+          LOVE_BIN=$(find squashfs-root -name love -type f -executable | head -1)
+          echo "Fusing game into: $LOVE_BIN"
+          cat "$LOVE_BIN" ballz.love > "${LOVE_BIN}.fused"
+          mv "${LOVE_BIN}.fused" "$LOVE_BIN"
+          chmod +x "$LOVE_BIN"
 
           # Update desktop entry name
           sed -i 's/^Name=.*/Name=Ballz/' squashfs-root/love.desktop
