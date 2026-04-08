@@ -133,7 +133,15 @@ jobs:
       - name: Build AppImage
         run: |
           # Extract LÖVE AppImage using squashfs-tools (no FUSE or libfuse2 needed)
-          OFFSET=$(LC_ALL=C grep -abo 'hsqs' love.AppImage | head -1 | cut -d: -f1)
+          # Find the real squashfs offset (skip first 128KB to avoid false 'hsqs'
+          # matches inside the ELF runtime binary code)
+          OFFSET=$(python3 -c "
+          data = open('love.AppImage', 'rb').read()
+          offset = data.find(b'hsqs', 131072)
+          assert offset != -1, 'squashfs magic not found'
+          print(offset)
+          ")
+          echo "SquashFS offset: $OFFSET"
           head -c "$OFFSET" love.AppImage > runtime
           unsquashfs -offset "$OFFSET" -dest squashfs-root love.AppImage
 
