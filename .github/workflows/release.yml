@@ -108,7 +108,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2
+          sudo apt-get install -y squashfs-tools
 
       - name: Generate version
         id: version
@@ -129,12 +129,13 @@ jobs:
         run: |
           LOVE_VERSION="11.5"
           curl -L -o love.AppImage "https://github.com/love2d/love/releases/download/${LOVE_VERSION}/love-${LOVE_VERSION}-x86_64.AppImage"
-          chmod +x love.AppImage
 
       - name: Build AppImage
         run: |
-          # Extract LÖVE AppImage (works without FUSE)
-          ./love.AppImage --appimage-extract
+          # Extract LÖVE AppImage using squashfs-tools (no FUSE or libfuse2 needed)
+          OFFSET=$(LC_ALL=C grep -abo 'hsqs' love.AppImage | head -1 | cut -d: -f1)
+          head -c "$OFFSET" love.AppImage > runtime
+          unsquashfs -offset "$OFFSET" -dest squashfs-root love.AppImage
 
           # Embed game into the AppImage
           cp ballz.love squashfs-root/
@@ -150,10 +151,10 @@ jobs:
           # Update desktop entry name
           sed -i 's/^Name=.*/Name=Ballz/' squashfs-root/love.desktop
 
-          # Download appimagetool and build the final AppImage
-          curl -L -o appimagetool "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
-          chmod +x appimagetool
-          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool squashfs-root/ ballz-x86_64.AppImage
+          # Repackage: original runtime + new squashfs = working AppImage
+          mksquashfs squashfs-root/ payload.squashfs -root-owned -noappend
+          cat runtime payload.squashfs > ballz-x86_64.AppImage
+          chmod +x ballz-x86_64.AppImage
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
