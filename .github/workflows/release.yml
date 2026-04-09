@@ -184,9 +184,6 @@ jobs:
         run: |
           echo "return \"${{ steps.version.outputs.version }}\"" > version.lua
 
-      - name: Create .love file
-        run: zip -9 ballz.love *.lua
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -244,23 +241,16 @@ jobs:
           </resources>
           EOF
 
-      - name: Embed game
-        run: cp ballz.love love-android/app/src/embed/assets/game.love
-
-      # AAssetManager_open with AASSET_MODE_RANDOM returns null for deflate-
-      # compressed assets, so game.love must be stored uncompressed in the APK.
-      - name: Patch build.gradle to store .love files uncompressed
+      # In LÖVE 11.5 the game.love-from-assets path is disabled (experimental).
+      # The working path is: put loose files in assets/ so checkFusedGame finds
+      # main.lua, returns gameLoveIO=null, and initializeVirtualArchive() mounts
+      # the whole assets/ directory as the game source.
+      - name: Embed game files into Android assets
         run: |
-          python3 - <<'EOF'
-          with open('love-android/app/build.gradle', 'r') as f:
-              content = f.read()
-          if 'noCompress' not in content:
-              content = content.replace('android {', 'android {\n    aaptOptions { noCompress "love" }', 1)
-              with open('love-android/app/build.gradle', 'w') as f:
-                  f.write(content)
-          EOF
+          mkdir -p love-android/app/src/embed/assets
+          cp *.lua love-android/app/src/embed/assets/
 
-      # Wipe only the APK/Java build outputs so game.love is always freshly
+      # Wipe only the APK/Java build outputs so game files are always freshly
       # merged into the APK. The NDK objects in app/.cxx stay cached.
       - name: Clear stale build outputs
         run: rm -rf love-android/app/build
