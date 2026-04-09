@@ -203,7 +203,7 @@ jobs:
           restore-keys: ${{ runner.os }}-gradle-
 
       - name: Clone love-android
-        run: git clone --depth 1 --branch 11.5 https://github.com/love2d/love-android love-android
+        run: git clone --depth 1 --shallow-submodules --recurse-submodules --branch 11.5 https://github.com/love2d/love-android love-android
 
       - name: Embed game
         run: |
@@ -212,10 +212,13 @@ jobs:
 
       - name: Build APK
         working-directory: love-android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleEmbedNoRecordDebug
 
       - name: Collect APK
-        run: cp love-android/app/build/outputs/apk/debug/app-debug.apk ballz-android.apk
+        run: |
+          APK=$(find love-android/app/build/outputs/apk -name "*.apk" | head -1)
+          echo "Found APK: $APK"
+          cp "$APK" ballz-android.apk
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
