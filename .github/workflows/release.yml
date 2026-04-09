@@ -193,17 +193,27 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Cache Gradle packages
+      # Cache the entire love-android clone + NDK build outputs.
+      # The NDK C++ compile (~25 min) only needs to run once; subsequent
+      # builds hit the cache and only repackage the updated game.love.
+      - name: Cache love-android (clone + NDK build outputs)
+        id: cache-love-android
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-love-android-11.5
-          restore-keys: ${{ runner.os }}-gradle-
+          path: love-android
+          key: love-android-11.5-${{ runner.os }}
 
       - name: Clone love-android
+        if: steps.cache-love-android.outputs.cache-hit != 'true'
         run: git clone --depth 1 --shallow-submodules --recurse-submodules --branch 11.5 https://github.com/love2d/love-android love-android
+
+      # Cache Gradle home (~/.gradle) — dependencies, wrapper, daemon jars.
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle
+          key: ${{ runner.os }}-gradle-love-android-11.5
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Embed game
         run: |
