@@ -216,9 +216,7 @@ jobs:
           restore-keys: ${{ runner.os }}-gradle-
 
       - name: Embed game
-        run: |
-          mkdir -p love-android/app/src/main/assets
-          cp ballz.love love-android/app/src/main/assets/game.love
+        run: cp ballz.love love-android/app/src/embed/assets/game.love
 
       - name: Build APK
         working-directory: love-android
