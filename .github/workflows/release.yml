@@ -247,9 +247,14 @@ jobs:
       # the whole assets/ directory as the game source.
       - name: Embed game files into Android assets
         run: |
-          # Remove the entire embed assets dir so cached game.love from a
-          # previous build can't survive and block checkFusedGame() from
-          # reaching the main.lua path (which triggers initializeVirtualArchive).
+          # Wipe ALL possible asset source sets that could contain a stale
+          # game.love from earlier CI runs (first attempt used src/main/assets,
+          # later runs used src/embed/assets; both sets are merged by Gradle).
+          # game.love must be absent so checkFusedGame() falls through to main.lua,
+          # triggering initializeVirtualArchive() — the only working embed path in
+          # LÖVE 11.5 (the game.love-from-assets IO path is marked experimental
+          # and deliberately destroyed without mounting).
+          rm -rf love-android/app/src/main/assets
           rm -rf love-android/app/src/embed/assets
           mkdir -p love-android/app/src/embed/assets
           cp *.lua love-android/app/src/embed/assets/
