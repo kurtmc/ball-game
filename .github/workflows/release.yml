@@ -218,6 +218,11 @@ jobs:
       - name: Embed game
         run: cp ballz.love love-android/app/src/embed/assets/game.love
 
+      # Wipe only the APK/Java build outputs so game.love is always freshly
+      # merged into the APK. The NDK objects in app/.cxx stay cached.
+      - name: Clear stale build outputs
+        run: rm -rf love-android/app/build
+
       - name: Build APK
         working-directory: love-android
         run: ./gradlew assembleEmbedNoRecordDebug
