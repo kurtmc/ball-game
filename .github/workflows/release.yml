@@ -218,6 +218,19 @@ jobs:
       - name: Embed game
         run: cp ballz.love love-android/app/src/embed/assets/game.love
 
+      # AAssetManager_open with AASSET_MODE_RANDOM returns null for deflate-
+      # compressed assets, so game.love must be stored uncompressed in the APK.
+      - name: Patch build.gradle to store .love files uncompressed
+        run: |
+          python3 - <<'EOF'
+          with open('love-android/app/build.gradle', 'r') as f:
+              content = f.read()
+          if 'noCompress' not in content:
+              content = content.replace('android {', 'android {\n    aaptOptions { noCompress "love" }', 1)
+              with open('love-android/app/build.gradle', 'w') as f:
+                  f.write(content)
+          EOF
+
       # Wipe only the APK/Java build outputs so game.love is always freshly
       # merged into the APK. The NDK objects in app/.cxx stay cached.
       - name: Clear stale build outputs
