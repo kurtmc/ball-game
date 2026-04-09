@@ -231,6 +231,19 @@ jobs:
           sed -i "s/^versionCode=.*/versionCode=${{ github.run_number }}/" love-android/gradle.properties
           sed -i "s/^versionName=.*/versionName=${{ steps.version.outputs.version }}/" love-android/gradle.properties
 
+      # Explicitly set R.bool.embed=true in the app module's embed flavor
+      # source set. The value is defined in the love/ submodule but overriding
+      # it here guarantees it is set regardless of submodule state.
+      - name: Set embed=true resource
+        run: |
+          mkdir -p love-android/app/src/embed/res/values
+          cat > love-android/app/src/embed/res/values/bools.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <bool name="embed">true</bool>
+          </resources>
+          EOF
+
       - name: Embed game
         run: cp ballz.love love-android/app/src/embed/assets/game.love
 
