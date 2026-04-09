@@ -167,8 +167,62 @@ jobs:
           name: linux-build
           path: ballz-x86_64.AppImage
 
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="1.0.0-${SHORT_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version into game
+        run: |
+          echo "return \"${{ steps.version.outputs.version }}\"" > version.lua
+
+      - name: Create .love file
+        run: zip -9 ballz.love *.lua
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-love-android-11.5
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Clone love-android
+        run: git clone --depth 1 --branch 11.5 https://github.com/love2d/love-android love-android
+
+      - name: Embed game
+        run: cp ballz.love love-android/app/src/main/assets/game.love
+
+      - name: Build APK
+        working-directory: love-android
+        run: ./gradlew assembleDebug
+
+      - name: Collect APK
+        run: cp love-android/app/build/outputs/apk/debug/app-debug.apk ballz-android.apk
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: ballz-android.apk
+
   release:
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-android]
     runs-on: ubuntu-latest
 
     steps:
@@ -185,4 +239,5 @@ jobs:
             windows-build/ballz.love
             windows-build/output/ballz-setup-${{ needs.build-windows.outputs.version }}.exe
             linux-build/ballz-x86_64.AppImage
+            android-build/ballz-android.apk
           generate_release_notes: true
