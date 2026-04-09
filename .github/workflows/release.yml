@@ -206,7 +206,9 @@ jobs:
         run: git clone --depth 1 --branch 11.5 https://github.com/love2d/love-android love-android
 
       - name: Embed game
-        run: cp ballz.love love-android/app/src/main/assets/game.love
+        run: |
+          mkdir -p love-android/app/src/main/assets
+          cp ballz.love love-android/app/src/main/assets/game.love
 
       - name: Build APK
         working-directory: love-android
