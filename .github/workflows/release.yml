@@ -215,6 +215,13 @@ jobs:
           key: ${{ runner.os }}-gradle-love-android-11.5
           restore-keys: ${{ runner.os }}-gradle-
 
+      # versionCode must increase with every release for Android to recognise
+      # an APK as an update. Use the workflow run number (auto-increments).
+      - name: Set versionCode
+        run: |
+          sed -i "s/^versionCode=.*/versionCode=${{ github.run_number }}/" love-android/gradle.properties
+          sed -i "s/^versionName=.*/versionName=${{ steps.version.outputs.version }}/" love-android/gradle.properties
+
       - name: Embed game
         run: cp ballz.love love-android/app/src/embed/assets/game.love
 
