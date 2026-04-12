@@ -22,6 +22,8 @@ updater.download_total = 0
 updater.download_poll_timer = 0
 updater.status_message = nil
 updater.status_timer = 0
+updater.download_ready = false       -- true when installer is downloaded and waiting
+updater.downloaded_path = nil        -- path to the downloaded installer
 
 local channel = nil
 local thread = nil
@@ -336,6 +338,10 @@ function updater.update(dt)
             updater.status_message = "Update check failed"
             updater.status_timer = 4
         end
+        -- Auto-start background download if update is available
+        if updater.update_available and updater.installer_url then
+            updater.startDownload()
+        end
     end
 
     -- Check for thread errors
@@ -361,13 +367,8 @@ function updater.update(dt)
             elseif dl_result:sub(1, 2) == "ok" then
                 updater.downloading = false
                 updater.download_progress = updater.download_total
-                local installer_path = dl_result:match("^ok|(.+)$")
-                if love.system.getOS() == "Windows" then
-                    os.execute('start "" "' .. installer_path .. '"')
-                else
-                    os.execute('"' .. installer_path .. '" &')
-                end
-                love.event.quit()
+                updater.downloaded_path = dl_result:match("^ok|(.+)$")
+                updater.download_ready = true
                 return
             elseif dl_result == "noinstaller" then
                 updater.downloading = false
@@ -468,7 +469,13 @@ function updater.draw()
         love.graphics.setColor(0.15, 0.5, 0.15, 0.9)
         love.graphics.rectangle("fill", 0, 0, w, banner_h)
 
-        if updater.downloading and updater.download_total > 0 then
+        if updater.download_ready then
+            -- Downloaded and ready to install
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.printf("Update " .. (updater.latest_version or "")
+                .. " ready!  |  Press [U] to install  |  [X] to dismiss",
+                10, 7, w - 20, "center")
+        elseif updater.downloading and updater.download_total > 0 then
             -- Progress bar
             local bar_x, bar_y = 100, 20
             local bar_w, bar_h = w - 200, 6
@@ -490,11 +497,12 @@ function updater.draw()
             love.graphics.setColor(0.3, 1.0, 0.3, 0.9)
             love.graphics.rectangle("fill", bar_x, bar_y, bar_w * fraction, bar_h, 3, 3)
         elseif updater.downloading then
-            -- Downloading but no size info — show indeterminate message
+            -- Downloading but no size info
             love.graphics.setColor(1, 1, 1)
             love.graphics.printf("Downloading " .. (updater.latest_version or "") .. "...",
                 10, 7, w - 20, "center")
         else
+            -- Update available but download hasn't started or no installer URL
             love.graphics.setColor(1, 1, 1)
             love.graphics.printf("Update available: " .. (updater.latest_version or "")
                 .. "  |  Press [U] to install  |  [X] to dismiss",
@@ -514,11 +522,29 @@ function updater.mousepressed(x, y)
     return false
 end
 
+function updater.runInstaller()
+    if updater.downloaded_path then
+        if love.system.getOS() == "Windows" then
+            os.execute('start "" "' .. updater.downloaded_path .. '"')
+        else
+            os.execute('"' .. updater.downloaded_path .. '" &')
+        end
+        love.event.quit()
+    elseif updater.installer_url then
+        -- Download not ready yet, start/continue it
+        if not updater.downloading then
+            updater.startDownload()
+        end
+    else
+        love.system.openURL(RELEASES_URL)
+    end
+end
+
 function updater.keypressed(key)
     if not updater.update_available or updater.dismissed then return false end
 
     if key == "u" then
-        updater.startDownload()
+        updater.runInstaller()
         return true
     elseif key == "x" then
         updater.dismissed = true
