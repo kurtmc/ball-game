@@ -49,6 +49,11 @@ local function findAssetInBody(body)
             installer_url = u
             break
         end
+    elseif os_name == "Android" then
+        for u in body:gmatch('"browser_download_url"%s*:%s*"([^"]*%.apk)"') do
+            installer_url = u
+            break
+        end
     else
         for u in body:gmatch('"browser_download_url"%s*:%s*"([^"]*setup[^"]*%.exe)"') do
             installer_url = u
@@ -155,6 +160,8 @@ end
 local installer_path
 if os_name == "Windows" then
     installer_path = temp .. "\\ballz-setup.exe"
+elseif os_name == "Android" then
+    installer_path = "/sdcard/Download/ballz-update.apk"
 elseif os_name == "Linux" then
     installer_path = temp .. "/ballz-update.AppImage"
 else
@@ -218,6 +225,8 @@ if ok and ltn12_ok and http_ok then
         elseif os_name == "Linux" then
             local final_path = finishLinuxInstall(installer_path)
             channel:push("ok|" .. final_path)
+        elseif os_name == "Android" then
+            channel:push("ok|" .. installer_path)
         else
             channel:push("noinstaller")
         end
@@ -261,6 +270,20 @@ elseif os_name == "Linux" then
         if size and size > 10000 then
             local final_path = finishLinuxInstall(installer_path)
             channel:push("ok|" .. final_path)
+            return
+        end
+    end
+    channel:push("error")
+elseif os_name == "Android" then
+    channel:push("path|" .. installer_path)
+    os.execute('curl -s -L -o "' .. installer_path .. '" "' .. installer_url .. '"')
+
+    local f = io.open(installer_path, "r")
+    if f then
+        local size = f:seek("end")
+        f:close()
+        if size and size > 10000 then
+            channel:push("ok|" .. installer_path)
             return
         end
     end
@@ -469,11 +492,14 @@ function updater.draw()
         love.graphics.setColor(0.15, 0.5, 0.15, 0.9)
         love.graphics.rectangle("fill", 0, 0, w, banner_h)
 
+        local install_hint = love.system.getOS() == "Android"
+            and "Tap to install  |  Tap again to dismiss"
+            or  "Press [U] to install  |  [X] to dismiss"
         if updater.download_ready then
             -- Downloaded and ready to install
             love.graphics.setColor(1, 1, 1)
             love.graphics.printf("Update " .. (updater.latest_version or "")
-                .. " ready!  |  Press [U] to install  |  [X] to dismiss",
+                .. " ready!  |  " .. install_hint,
                 10, 7, w - 20, "center")
         elseif updater.downloading and updater.download_total > 0 then
             -- Progress bar
@@ -505,7 +531,7 @@ function updater.draw()
             -- Update available but download hasn't started or no installer URL
             love.graphics.setColor(1, 1, 1)
             love.graphics.printf("Update available: " .. (updater.latest_version or "")
-                .. "  |  Press [U] to install  |  [X] to dismiss",
+                .. "  |  " .. install_hint,
                 10, 7, w - 20, "center")
         end
     end
@@ -519,13 +545,34 @@ function updater.mousepressed(x, y)
         updater.checkForUpdates()
         return true
     end
+    -- On Android, tap the update banner to install (when ready) or dismiss
+    if love.system.getOS() == "Android" then
+        if updater.update_available and not updater.dismissed and y < 30 then
+            if updater.download_ready then
+                updater.runInstaller()
+            else
+                updater.dismissed = true
+            end
+            return true
+        end
+    end
     return false
 end
 
 function updater.runInstaller()
     if updater.downloaded_path then
-        if love.system.getOS() == "Windows" then
+        local os_name = love.system.getOS()
+        if os_name == "Windows" then
             os.execute('start "" "' .. updater.downloaded_path .. '"')
+        elseif os_name == "Android" then
+            local ok = os.execute(
+                'am start -a android.intent.action.VIEW'
+                .. ' -t "application/vnd.android.package-archive"'
+                .. ' -d "file://' .. updater.downloaded_path .. '"'
+            )
+            if not ok then
+                love.system.openURL(RELEASES_URL)
+            end
         else
             os.execute('"' .. updater.downloaded_path .. '" &')
         end

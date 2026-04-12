@@ -154,6 +154,18 @@ function love.mousereleased(x, y, button)
     end
 end
 
+function love.touchpressed(id, x, y, dx, dy, pressure)
+    if game.state == "launching" or game.state == "resolving" then
+        local gx, gy = scaling.toGame(x, y)
+        if gy > 30 then  -- avoid update banner area
+            if game.speed_mult == 1 then game.speed_mult = 3
+            elseif game.speed_mult == 3 then game.speed_mult = 6
+            elseif game.speed_mult == 6 then game.speed_mult = 9
+            else game.speed_mult = 1 end
+        end
+    end
+end
+
 function love.resize(w, h)
     scaling.update()
 end

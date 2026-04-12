@@ -231,6 +231,7 @@ jobs:
       # Explicitly set R.bool.embed=true in the app module's embed flavor
       # source set. The value is defined in the love/ submodule but overriding
       # it here guarantees it is set regardless of submodule state.
+      # Also override the app name ("Love for Android" → "Ballz") via strings.xml.
       - name: Set embed=true resource
         run: |
           mkdir -p love-android/app/src/embed/res/values
@@ -240,6 +241,29 @@ jobs:
               <bool name="embed">true</bool>
           </resources>
           EOF
+          cat > love-android/app/src/embed/res/values/strings.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">Ballz</string>
+          </resources>
+          EOF
+
+      - name: Generate Android app icon
+        run: |
+          magick -size 512x512 xc:"#14141E" \
+            -fill "#E64D4D" -draw "circle 256,256 256,56" \
+            -fill "#FF8080" -draw "circle 200,200 200,150" \
+            -fill "#FFB3B3" -draw "circle 180,180 180,160" \
+            ballz-icon.png
+          for density in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            d="${density%%:*}"
+            s="${density##*:}"
+            mkdir -p "love-android/app/src/embed/res/mipmap-${d}"
+            magick ballz-icon.png -resize "${s}x${s}" \
+              "love-android/app/src/embed/res/mipmap-${d}/ic_launcher.png"
+            magick ballz-icon.png -resize "${s}x${s}" \
+              "love-android/app/src/embed/res/mipmap-${d}/ic_launcher_round.png"
+          done
 
       # In LÖVE 11.5 the game.love-from-assets path is disabled (experimental).
       # The working path is: put loose files in assets/ so checkFusedGame finds
