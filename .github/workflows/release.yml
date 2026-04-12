@@ -202,11 +202,15 @@ jobs:
       # Cache the entire love-android clone + NDK build outputs.
       # The NDK C++ compile (~25 min) only needs to run once; subsequent
       # builds hit the cache and only repackage the updated game.love.
+      # app/build is excluded: it is wiped before every build anyway, so
+      # caching and restoring it is pure overhead (can be 100 MB+).
       - name: Cache love-android (clone + NDK build outputs)
         id: cache-love-android
         uses: actions/cache@v4
         with:
-          path: love-android
+          path: |
+            love-android
+            !love-android/app/build
           key: love-android-11.5-${{ runner.os }}
 
       - name: Clone love-android
@@ -248,22 +252,43 @@ jobs:
           </resources>
           EOF
 
-      - name: Generate Android app icon
+      # Icons are deterministic and never change — cache them permanently so
+      # apt-get install imagemagick only runs on the very first cache miss.
+      - name: Cache Android app icons
+        id: cache-android-icons
+        uses: actions/cache@v4
+        with:
+          path: android-icons
+          key: android-icons-v1
+
+      - name: Generate Android app icons
+        if: steps.cache-android-icons.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y --no-install-recommends imagemagick
+          mkdir -p android-icons
           convert -size 512x512 xc:"#14141E" \
             -fill "#E64D4D" -draw "circle 256,256 256,56" \
             -fill "#FF8080" -draw "circle 200,200 200,150" \
             -fill "#FFB3B3" -draw "circle 180,180 180,160" \
-            ballz-icon.png
+            android-icons/ballz-icon.png
           for density in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
             d="${density%%:*}"
             s="${density##*:}"
-            mkdir -p "love-android/app/src/embed/res/mipmap-${d}"
-            convert ballz-icon.png -resize "${s}x${s}" \
-              "love-android/app/src/embed/res/mipmap-${d}/ic_launcher.png"
-            convert ballz-icon.png -resize "${s}x${s}" \
-              "love-android/app/src/embed/res/mipmap-${d}/ic_launcher_round.png"
+            mkdir -p "android-icons/mipmap-${d}"
+            convert android-icons/ballz-icon.png -resize "${s}x${s}" \
+              "android-icons/mipmap-${d}/ic_launcher.png"
+            convert android-icons/ballz-icon.png -resize "${s}x${s}" \
+              "android-icons/mipmap-${d}/ic_launcher_round.png"
+          done
+
+      - name: Copy icons to embed res
+        run: |
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "love-android/app/src/embed/res/mipmap-${density}"
+            cp "android-icons/mipmap-${density}/ic_launcher.png" \
+               "love-android/app/src/embed/res/mipmap-${density}/"
+            cp "android-icons/mipmap-${density}/ic_launcher_round.png" \
+               "love-android/app/src/embed/res/mipmap-${density}/"
           done
 
       # In LÖVE 11.5 the game.love-from-assets path is disabled (experimental).
