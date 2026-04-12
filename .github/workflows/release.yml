@@ -250,7 +250,7 @@ jobs:
 
       - name: Generate Android app icon
         run: |
-          magick -size 512x512 xc:"#14141E" \
+          convert -size 512x512 xc:"#14141E" \
             -fill "#E64D4D" -draw "circle 256,256 256,56" \
             -fill "#FF8080" -draw "circle 200,200 200,150" \
             -fill "#FFB3B3" -draw "circle 180,180 180,160" \
@@ -259,9 +259,9 @@ jobs:
             d="${density%%:*}"
             s="${density##*:}"
             mkdir -p "love-android/app/src/embed/res/mipmap-${d}"
-            magick ballz-icon.png -resize "${s}x${s}" \
+            convert ballz-icon.png -resize "${s}x${s}" \
               "love-android/app/src/embed/res/mipmap-${d}/ic_launcher.png"
-            magick ballz-icon.png -resize "${s}x${s}" \
+            convert ballz-icon.png -resize "${s}x${s}" \
               "love-android/app/src/embed/res/mipmap-${d}/ic_launcher_round.png"
           done
 
