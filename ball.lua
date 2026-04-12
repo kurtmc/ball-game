@@ -163,7 +163,8 @@ function ball.updateOne(b, game, dt)
                     local audio = require("audio")
                     audio.playDestroy()
                     game.grid[hit_data.row][hit_data.col] = nil
-                    game.score = game.score + 1
+                    local combo_mult = math.max(1, math.ceil(game.combo / 10))
+                    game.score = game.score + combo_mult
 
                     -- Spawn particles
                     local particles = require("particles")
@@ -301,7 +302,11 @@ function ball.updateOne(b, game, dt)
             local ddy = b.y - my
             if ddx * ddx + ddy * ddy < pickup_r2 then
                 m.collected = true
-                table.insert(game.pending_mutations, m.type)
+                if m.draft then
+                    game.pending_draft = (game.pending_draft or 0) + 1
+                else
+                    table.insert(game.pending_mutations, m.type)
+                end
                 local audio = require("audio")
                 audio.playMutagenPickup()
             end

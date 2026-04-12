@@ -75,7 +75,12 @@ local function devSkipLevels(game, count)
             table.insert(game.pickups, { col = p.col, row = 1, collected = false })
         end
         for _, mg in ipairs(muts) do
-            table.insert(game.mutagens, { col = mg.col, row = 1, type = mutations.rollMutagen(), collected = false })
+            table.insert(game.mutagens, {
+                col = mg.col, row = 1,
+                type = mg.draft and "draft" or mutations.rollMutagen(),
+                collected = false,
+                draft = mg.draft or false,
+            })
         end
         if void_block then
             game.grid[1][void_block.col] = { hp = math.huge, max_hp = 1, void = true }
@@ -254,9 +259,19 @@ function handlers.collecting.update(game, dt)
         -- Clamp launch_x to grid bounds
         game.launch_x = math.max(G.GRID_LEFT + G.BALL_RADIUS, math.min(G.GRID_RIGHT - G.BALL_RADIUS, game.launch_x))
 
-        -- Transition to advancing
-        game.state = "advancing"
+        -- Transition: draft pick before advancing if any draft orbs were collected
         game.descend_offset = -G.CELL_SIZE
+        if (game.pending_draft or 0) > 0 then
+            game.pending_draft = 0
+            game.state = "drafting"
+            local choices = {}
+            for _ = 1, 3 do
+                table.insert(choices, mutations.rollMutagen())
+            end
+            game.draft_choices = choices
+        else
+            game.state = "advancing"
+        end
 
         -- Advance grid: shift all blocks and pickups down by 1 row
         -- Process from bottom to top to avoid overwriting
@@ -284,8 +299,9 @@ function handlers.collecting.update(game, dt)
         for _, m in ipairs(mutagens) do
             table.insert(game.mutagens, {
                 col = m.col, row = 1,
-                type = mutations.rollMutagen(),
+                type = m.draft and "draft" or mutations.rollMutagen(),
                 collected = false,
+                draft = m.draft or false,
             })
         end
         if void_block then
@@ -425,6 +441,63 @@ function handlers.advancing.mousepressed() end
 function handlers.advancing.mousemoved() end
 function handlers.advancing.mousereleased() end
 function handlers.advancing.keypressed() end
+
+----------------------------------------------------------------
+-- DRAFTING
+----------------------------------------------------------------
+handlers.drafting = {}
+
+local DRAFT_PANEL_W = 190
+local DRAFT_PANEL_H = 210
+local DRAFT_PANEL_GAP = 15
+local DRAFT_PANEL_Y = 290
+
+local function draftPanelX(i)
+    local total_w = 3 * DRAFT_PANEL_W + 2 * DRAFT_PANEL_GAP
+    local start_x = (800 - total_w) / 2
+    return start_x + (i - 1) * (DRAFT_PANEL_W + DRAFT_PANEL_GAP)
+end
+
+local function applyDraftChoice(game, mtype)
+    game.mutations[mtype] = (game.mutations[mtype] or 0) + 1
+    game.draft_choices = nil
+    if not game.chaos_active then
+        game.chaos_active = true
+        game.chaos_zone_flash = 3.0
+    end
+    game.state = "advancing"
+end
+
+function handlers.drafting.update(game, dt)
+    -- nothing; wait for player input
+end
+
+function handlers.drafting.draw(game)
+    -- Rendered entirely by ui.drawDraft (called from ui.drawHUD via state check)
+end
+
+function handlers.drafting.mousepressed(game, x, y)
+    if not game.draft_choices then return end
+    for i = 1, 3 do
+        local px = draftPanelX(i)
+        if x >= px and x <= px + DRAFT_PANEL_W
+           and y >= DRAFT_PANEL_Y and y <= DRAFT_PANEL_Y + DRAFT_PANEL_H then
+            applyDraftChoice(game, game.draft_choices[i])
+            return
+        end
+    end
+end
+
+function handlers.drafting.keypressed(game, key)
+    if not game.draft_choices then return end
+    local idx = tonumber(key)
+    if idx and idx >= 1 and idx <= 3 then
+        applyDraftChoice(game, game.draft_choices[idx])
+    end
+end
+
+function handlers.drafting.mousemoved() end
+function handlers.drafting.mousereleased() end
 
 ----------------------------------------------------------------
 -- GAME OVER

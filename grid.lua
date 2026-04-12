@@ -103,6 +103,12 @@ function grid.generateRow(level)
         next_col = next_col + 1
     end
 
+    -- Draft orb: ~30% chance per row in Chaos Zone. Player chooses 1 of 3 mutations.
+    if level > 50 and next_col <= grid.COLS and math.random() < 0.30 then
+        table.insert(mutagens, { col = cols[next_col], draft = true })
+        next_col = next_col + 1
+    end
+
     -- Void blocks: only in Chaos Zone, ~30% chance per row, max 1
     local void_block = nil
     if level > 50 and next_col <= grid.COLS and math.random() < 0.30 then

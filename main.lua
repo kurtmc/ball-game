@@ -47,6 +47,8 @@ local function resetGame()
     game.chaos_zone_flash   = 0    -- entrance animation timer
     game.sniper_damage_mult = 1    -- damage multiplier for SNIPER modifier
     game.jackpot_mutagens   = 0    -- count of mutagens spawned this turn by JACKPOT
+    game.pending_draft      = 0    -- draft orbs collected this turn
+    game.draft_choices      = nil  -- {mtype, mtype, mtype} shown during drafting state
 
     -- Initialize grid rows
     for r = 1, G.ROWS do

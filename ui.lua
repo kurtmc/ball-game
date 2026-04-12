@@ -95,6 +95,19 @@ function ui.drawHUD(game)
             love.graphics.setColor(0.4, 0.4, 0.4)
             love.graphics.printf("[Space] to speed up", 0, 775, 800, "center")
         end
+        -- Combo multiplier display
+        local mult = math.max(1, math.ceil((game.combo or 0) / 10))
+        if mult > 1 then
+            love.graphics.setFont(fontLarge)
+            love.graphics.setColor(1, 1, 0.2, 0.9)
+            love.graphics.printf("x" .. mult .. " COMBO!", 0, 740, 800, "center")
+            love.graphics.setFont(fontMedium)
+        end
+    end
+
+    -- Draft selection screen
+    if game.state == "drafting" then
+        ui.drawDraft(game)
     end
 
     -- Dev mode panel
@@ -129,6 +142,78 @@ function ui.drawHUD(game)
         love.graphics.print("DEV", 10, 780)
         love.graphics.setFont(fontMedium)
     end
+end
+
+function ui.drawDraft(game)
+    if not game.draft_choices then return end
+
+    local PANEL_W = 190
+    local PANEL_H = 210
+    local PANEL_GAP = 15
+    local PANEL_Y = 290
+    local total_w = 3 * PANEL_W + 2 * PANEL_GAP
+    local start_x = (800 - total_w) / 2
+
+    -- Dimmed background overlay
+    love.graphics.setColor(0, 0, 0, 0.75)
+    love.graphics.rectangle("fill", 0, 0, 800, 800)
+
+    -- Title
+    love.graphics.setFont(fontLarge)
+    love.graphics.setColor(1, 0.85, 0.2)
+    love.graphics.printf("MUTATION DRAFT", 0, 230, 800, "center")
+    love.graphics.setFont(fontSmall)
+    love.graphics.setColor(0.7, 0.7, 0.7)
+    love.graphics.printf("Choose one  [1] [2] [3]", 0, 260, 800, "center")
+
+    for i, mtype in ipairs(game.draft_choices) do
+        local t = mut.TYPES[mtype]
+        local px = start_x + (i - 1) * (PANEL_W + PANEL_GAP)
+
+        -- Panel background
+        love.graphics.setColor(t.color[1] * 0.2, t.color[2] * 0.2, t.color[3] * 0.2, 0.95)
+        love.graphics.rectangle("fill", px, PANEL_Y, PANEL_W, PANEL_H, 10, 10)
+
+        -- Colored border
+        love.graphics.setColor(t.color[1], t.color[2], t.color[3], 0.8)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", px, PANEL_Y, PANEL_W, PANEL_H, 10, 10)
+        love.graphics.setLineWidth(1)
+
+        -- Key hint
+        love.graphics.setFont(fontSmall)
+        love.graphics.setColor(t.color[1], t.color[2], t.color[3], 0.6)
+        love.graphics.printf("[" .. i .. "]", px, PANEL_Y + 10, PANEL_W, "center")
+
+        -- Mutation symbol circle
+        love.graphics.setColor(t.color[1], t.color[2], t.color[3], 0.9)
+        love.graphics.circle("fill", px + PANEL_W / 2, PANEL_Y + 65, 22)
+        love.graphics.setFont(fontLarge)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(t.symbol, px, PANEL_Y + 54, PANEL_W, "center")
+
+        -- Mutation name
+        love.graphics.setFont(fontMedium)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(t.name, px, PANEL_Y + 100, PANEL_W, "center")
+
+        -- Description
+        love.graphics.setFont(fontSmall)
+        love.graphics.setColor(0.8, 0.8, 0.8, 0.9)
+        love.graphics.printf(t.desc, px + 8, PANEL_Y + 125, PANEL_W - 16, "center")
+
+        -- Current stacks indicator
+        local stacks = game.mutations[mtype] or 0
+        if stacks > 0 then
+            love.graphics.setColor(t.color[1], t.color[2], t.color[3], 0.7)
+            love.graphics.printf("Current: x" .. stacks, px, PANEL_Y + 175, PANEL_W, "center")
+        else
+            love.graphics.setColor(0.4, 0.4, 0.4, 0.7)
+            love.graphics.printf("New!", px, PANEL_Y + 175, PANEL_W, "center")
+        end
+    end
+
+    love.graphics.setFont(fontMedium)
 end
 
 function ui.drawGrid(game)
@@ -220,18 +305,38 @@ function ui.drawGrid(game)
             local mx, my = G.gridToPixelCenter(m.col, m.row)
             my = my + offset_y
             if my > G.GRID_TOP and my < G.FLOOR_Y then
-                local t = mut.TYPES[m.type]
                 local pulse = 0.6 + 0.4 * math.sin(time * 5 + mx * 0.05)
-                -- Outer glow
-                love.graphics.setColor(t.color[1], t.color[2], t.color[3], pulse * 0.3)
-                love.graphics.circle("fill", mx, my, G.PICKUP_RADIUS + 4)
-                -- Inner orb
-                love.graphics.setColor(t.color[1], t.color[2], t.color[3], pulse)
-                love.graphics.circle("fill", mx, my, G.PICKUP_RADIUS)
-                -- Symbol
-                love.graphics.setColor(1, 1, 1, pulse)
-                love.graphics.setFont(fontSmall)
-                love.graphics.printf(t.symbol, mx - 10, my - 7, 20, "center")
+                if m.draft then
+                    -- Draft orb: gold with rotating star ring and "?" symbol
+                    love.graphics.setColor(1.0, 0.85, 0.0, pulse * 0.3)
+                    love.graphics.circle("fill", mx, my, G.PICKUP_RADIUS + 6)
+                    love.graphics.setColor(1.0, 0.85, 0.0, pulse)
+                    love.graphics.circle("fill", mx, my, G.PICKUP_RADIUS)
+                    -- Rotating sparkle dots
+                    for s = 1, 4 do
+                        local angle = time * 3 + s * 1.5708
+                        local sr = G.PICKUP_RADIUS + 3
+                        local sx = mx + math.cos(angle) * sr
+                        local sy = my + math.sin(angle) * sr
+                        love.graphics.setColor(1.0, 1.0, 0.5, pulse * 0.8)
+                        love.graphics.circle("fill", sx, sy, 2)
+                    end
+                    love.graphics.setColor(0.1, 0.05, 0, pulse)
+                    love.graphics.setFont(fontSmall)
+                    love.graphics.printf("?", mx - 10, my - 7, 20, "center")
+                else
+                    local t = mut.TYPES[m.type]
+                    -- Outer glow
+                    love.graphics.setColor(t.color[1], t.color[2], t.color[3], pulse * 0.3)
+                    love.graphics.circle("fill", mx, my, G.PICKUP_RADIUS + 4)
+                    -- Inner orb
+                    love.graphics.setColor(t.color[1], t.color[2], t.color[3], pulse)
+                    love.graphics.circle("fill", mx, my, G.PICKUP_RADIUS)
+                    -- Symbol
+                    love.graphics.setColor(1, 1, 1, pulse)
+                    love.graphics.setFont(fontSmall)
+                    love.graphics.printf(t.symbol, mx - 10, my - 7, 20, "center")
+                end
             end
         end
     end

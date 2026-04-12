@@ -6,12 +6,12 @@ local mutations = {}
 
 -- Mutation type definitions
 mutations.TYPES = {
-    heavy   = { name = "HEAVY",    color = {1.0, 0.3, 0.3}, symbol = "H", weight = 3 },
-    splitter= { name = "SPLITTER", color = {0.3, 1.0, 0.3}, symbol = "S", weight = 1 },
-    ghost   = { name = "GHOST",    color = {0.7, 0.3, 1.0}, symbol = "G", weight = 2 },
-    kaboom  = { name = "KABOOM",   color = {1.0, 0.6, 0.2}, symbol = "K", weight = 1 },
-    drunk   = { name = "DRUNK",    color = {1.0, 0.5, 0.8}, symbol = "D", weight = 3 },
-    magnet  = { name = "MAGNET",   color = {0.3, 0.6, 1.0}, symbol = "M", weight = 2 },
+    heavy   = { name = "HEAVY",    color = {1.0, 0.3, 0.3}, symbol = "H", weight = 3, desc = "+1 damage per ball" },
+    splitter= { name = "SPLITTER", color = {0.3, 1.0, 0.3}, symbol = "S", weight = 1, desc = "Balls split on first block hit" },
+    ghost   = { name = "GHOST",    color = {0.7, 0.3, 1.0}, symbol = "G", weight = 2, desc = "Phase through 1 extra block" },
+    kaboom  = { name = "KABOOM",   color = {1.0, 0.6, 0.2}, symbol = "K", weight = 1, desc = "Destroyed blocks chain-explode" },
+    drunk   = { name = "DRUNK",    color = {1.0, 0.5, 0.8}, symbol = "D", weight = 3, desc = "Random +-15 deg angle on bounce" },
+    magnet  = { name = "MAGNET",   color = {0.3, 0.6, 1.0}, symbol = "M", weight = 2, desc = "Balls curve toward blocks" },
 }
 
 -- Ordered list for consistent iteration
