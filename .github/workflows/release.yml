@@ -190,14 +190,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Cache the debug keystore so every build is signed with the same key.
-      # Without this each runner generates a fresh keystore, making APK
-      # signatures incompatible and preventing over-the-air updates.
-      - name: Cache Android debug keystore
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+      # Restore the stable debug keystore from a repository secret.
+      # Using a secret (not a cache) means the key never expires, so APK
+      # signatures stay consistent across all builds indefinitely.
+      - name: Set up Android debug keystore
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
 
       # Cache the entire love-android clone + NDK build outputs.
       # The NDK C++ compile (~25 min) only needs to run once; subsequent
