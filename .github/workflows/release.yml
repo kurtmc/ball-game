@@ -211,31 +211,41 @@ jobs:
             -storepass android -alias androiddebugkey \
             | grep -E 'SHA256:'
 
-      # Cache the entire love-android clone + NDK build outputs.
-      # The NDK C++ compile (~25 min) only needs to run once; subsequent
-      # builds hit the cache and only repackage the updated game.love.
-      # app/build is excluded: it is wiped before every build anyway, so
-      # caching and restoring it is pure overhead (can be 100 MB+).
-      - name: Cache love-android (clone + NDK build outputs)
+      # Cache the entire love-android clone, NDK build outputs, AND
+      # app/build (Gradle's incremental build intermediates: aapt2, javac,
+      # dex, manifest merge, linked native libs). Preserving app/build is
+      # what makes "Build APK" fast on Lua-only changes: Gradle's input
+      # hashes then show only src/embed/assets/*.lua changed, so only
+      # mergeAssets + packageDebug re-run.
+      #
+      # Rolling SHA-keyed primary key with a prefix restore-key so each run
+      # saves a fresh cache AND restores the most recent prior cache on
+      # miss. Static keys (previous design) never updated after the first
+      # save, so app/build intermediates grew stale.
+      - name: Cache love-android (clone + build intermediates)
         id: cache-love-android
         uses: actions/cache@v4
         with:
-          path: |
-            love-android
-            !love-android/app/build
-          key: love-android-11.5-${{ runner.os }}
+          path: love-android
+          key: love-android-11.5-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            love-android-11.5-${{ runner.os }}-
 
       - name: Clone love-android
         if: steps.cache-love-android.outputs.cache-hit != 'true'
         run: git clone --depth 1 --shallow-submodules --recurse-submodules --branch 11.5 https://github.com/love2d/love-android love-android
 
-      # Cache Gradle home (~/.gradle) — dependencies, wrapper, daemon jars.
+      # Cache Gradle home (~/.gradle) — dependencies, wrapper, daemon jars,
+      # and the cross-task build cache in caches/build-cache-*. Rolling key
+      # so build-cache entries keep getting refreshed on every run.
       - name: Cache Gradle home
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: ${{ runner.os }}-gradle-love-android-11.5
-          restore-keys: ${{ runner.os }}-gradle-
+          key: ${{ runner.os }}-gradle-love-android-11.5-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-love-android-11.5-
+            ${{ runner.os }}-gradle-
 
       # love-android 11.5 ships no signingConfigs block, so AGP falls back to
       # its auto-generated debug key in ~/.android/debug.keystore. In practice
@@ -376,14 +386,32 @@ jobs:
           mkdir -p love-android/app/src/embed/assets
           cp *.lua love-android/app/src/embed/assets/
 
-      # Wipe only the APK/Java build outputs so game files are always freshly
-      # merged into the APK. The NDK objects in app/.cxx stay cached.
-      - name: Clear stale build outputs
-        run: rm -rf love-android/app/build
+      # Enable Gradle's parallel execution, cross-task build cache, and
+      # daemon so cached app/build intermediates are actually reused.
+      # Without parallel+caching flags Gradle still runs tasks serially
+      # and doesn't consult the task-output cache even when the cache
+      # entry exists.
+      - name: Tune Gradle for fast incremental builds
+        run: |
+          # Idempotent: love-android is cached so the properties may already
+          # contain the marker from a prior run — don't duplicate.
+          if ! grep -q '^# BALLZ_PERF_TUNED' love-android/gradle.properties; then
+            cat >> love-android/gradle.properties <<'EOF'
+          # BALLZ_PERF_TUNED
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.daemon=true
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          EOF
+          fi
 
+      # Gradle re-evaluates task inputs and skips up-to-date tasks. Since
+      # app/build is restored from cache and only src/embed/assets changed,
+      # mergeAssets + packageDebug are the only tasks that typically re-run.
+      # --build-cache enables the task-output cache pulled from ~/.gradle.
       - name: Build APK
         working-directory: love-android
-        run: ./gradlew assembleEmbedNoRecordDebug
+        run: ./gradlew assembleEmbedNoRecordDebug --build-cache
 
       - name: Collect APK
         run: |
