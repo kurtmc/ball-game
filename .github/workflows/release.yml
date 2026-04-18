@@ -234,7 +234,6 @@ jobs:
       # Explicitly set R.bool.embed=true in the app module's embed flavor
       # source set. The value is defined in the love/ submodule but overriding
       # it here guarantees it is set regardless of submodule state.
-      # Also override the app name ("Love for Android" → "Ballz") via strings.xml.
       - name: Set embed=true resource
         run: |
           mkdir -p love-android/app/src/embed/res/values
@@ -244,12 +243,19 @@ jobs:
               <bool name="embed">true</bool>
           </resources>
           EOF
-          cat > love-android/app/src/embed/res/values/strings.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">Ballz</string>
-          </resources>
-          EOF
+
+      # AndroidManifest.xml uses android:label="${NAME}" — a Gradle manifest
+      # placeholder resolved from app.name / app.name_byte_array in
+      # gradle.properties, NOT from @string/app_name. Override both so the
+      # launcher title is "Ballz" instead of the default "LÖVE for Android".
+      - name: Override app name in gradle.properties
+        run: |
+          sed -i 's/^app\.name_byte_array=/#app.name_byte_array=/' love-android/gradle.properties
+          if grep -q '^#app\.name=' love-android/gradle.properties; then
+            sed -i 's/^#app\.name=.*/app.name=Ballz/' love-android/gradle.properties
+          elif ! grep -q '^app\.name=' love-android/gradle.properties; then
+            echo 'app.name=Ballz' >> love-android/gradle.properties
+          fi
 
       # Icons are deterministic and never change — cache them permanently so
       # apt-get install imagemagick only runs on the very first cache miss.
@@ -258,8 +264,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: android-icons
-          key: android-icons-v1
+          key: android-icons-v2
 
+      # AndroidManifest.xml references android:icon="@drawable/love". love.png
+      # exists in drawable-{ldpi..xxxhdpi} in the main source set; overriding
+      # every density in the embed flavor replaces the launcher icon.
       - name: Generate Android app icons
         if: steps.cache-android-icons.outputs.cache-hit != 'true'
         run: |
@@ -270,24 +279,20 @@ jobs:
             -fill "#FF8080" -draw "circle 200,200 200,150" \
             -fill "#FFB3B3" -draw "circle 180,180 180,160" \
             android-icons/ballz-icon.png
-          for density in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+          for density in ldpi:36 mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
             d="${density%%:*}"
             s="${density##*:}"
-            mkdir -p "android-icons/mipmap-${d}"
+            mkdir -p "android-icons/drawable-${d}"
             convert android-icons/ballz-icon.png -resize "${s}x${s}" \
-              "android-icons/mipmap-${d}/ic_launcher.png"
-            convert android-icons/ballz-icon.png -resize "${s}x${s}" \
-              "android-icons/mipmap-${d}/ic_launcher_round.png"
+              "android-icons/drawable-${d}/love.png"
           done
 
       - name: Copy icons to embed res
         run: |
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            mkdir -p "love-android/app/src/embed/res/mipmap-${density}"
-            cp "android-icons/mipmap-${density}/ic_launcher.png" \
-               "love-android/app/src/embed/res/mipmap-${density}/"
-            cp "android-icons/mipmap-${density}/ic_launcher_round.png" \
-               "love-android/app/src/embed/res/mipmap-${density}/"
+          for density in ldpi mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "love-android/app/src/embed/res/drawable-${density}"
+            cp "android-icons/drawable-${density}/love.png" \
+               "love-android/app/src/embed/res/drawable-${density}/"
           done
 
       # In LÖVE 11.5 the game.love-from-assets path is disabled (experimental).
