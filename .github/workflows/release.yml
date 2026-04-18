@@ -231,9 +231,17 @@ jobs:
           restore-keys: |
             love-android-11.5-${{ runner.os }}-
 
+      # Guard by dir existence, not cache-hit: with rolling keys the primary
+      # key misses on every new SHA, so cache-hit is 'false' even when the
+      # restore-key fallback successfully restored love-android/. Cloning
+      # into an existing directory would then fail with exit 128.
       - name: Clone love-android
-        if: steps.cache-love-android.outputs.cache-hit != 'true'
-        run: git clone --depth 1 --shallow-submodules --recurse-submodules --branch 11.5 https://github.com/love2d/love-android love-android
+        run: |
+          if [ ! -d love-android/.git ]; then
+            git clone --depth 1 --shallow-submodules --recurse-submodules --branch 11.5 https://github.com/love2d/love-android love-android
+          else
+            echo "love-android restored from cache, skipping clone"
+          fi
 
       # Cache Gradle home (~/.gradle) — dependencies, wrapper, daemon jars,
       # and the cross-task build cache in caches/build-cache-*. Rolling key
