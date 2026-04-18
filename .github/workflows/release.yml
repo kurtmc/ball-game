@@ -197,6 +197,21 @@ jobs:
         run: |
           mkdir -p ~/.android
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+          # Fail loudly if the secret is missing/empty. An empty keystore
+          # triggers Gradle to regenerate a fresh random keystore per run,
+          # which makes every APK signature different and causes
+          # "App not installed as package conflicts with an existing
+          # package" when the user updates.
+          if [ ! -s ~/.android/debug.keystore ]; then
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 secret is missing or empty." >&2
+            echo "Add it under Settings → Secrets → Actions." >&2
+            exit 1
+          fi
+          # Print the SHA-256 fingerprint so signature stability across
+          # runs is visible in the workflow log.
+          keytool -list -v -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey 2>/dev/null \
+            | grep -E 'SHA256:' || true
 
       # Cache the entire love-android clone + NDK build outputs.
       # The NDK C++ compile (~25 min) only needs to run once; subsequent
@@ -339,6 +354,26 @@ jobs:
           APK=$(find love-android/app/build/outputs/apk -name "*.apk" | head -1)
           echo "Found APK: $APK"
           cp "$APK" ballz-android.apk
+
+      # Surface the resolved applicationId and the APK's signing fingerprint
+      # so it's obvious in the log whether the package ID override landed and
+      # whether the keystore is stable across runs (signature must not drift
+      # or every reinstall produces a "package conflicts" error).
+      - name: Dump APK metadata
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1)
+          echo "Build tools: $BUILD_TOOLS"
+          if [ -x "${BUILD_TOOLS}aapt" ]; then
+            "${BUILD_TOOLS}aapt" dump badging ballz-android.apk | grep -E '^(package|application-label)'
+          elif [ -x "${BUILD_TOOLS}aapt2" ]; then
+            "${BUILD_TOOLS}aapt2" dump badging ballz-android.apk | grep -E '^(package|application-label)'
+          fi
+          # APK signing fingerprint (SHA-256 of signing cert)
+          unzip -p ballz-android.apk META-INF/ANDROIDD.RSA 2>/dev/null \
+            | keytool -printcert 2>/dev/null | grep -E 'SHA256:' || \
+          unzip -p ballz-android.apk META-INF/CERT.RSA 2>/dev/null \
+            | keytool -printcert 2>/dev/null | grep -E 'SHA256:' || \
+          echo "(APK signature info unavailable)"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
