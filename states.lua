@@ -86,6 +86,14 @@ local function devSkipLevels(game, count)
         if void_block then
             game.grid[1][void_block.col] = { hp = math.huge, max_hp = 1, void = true }
         end
+        for extra_row = 2, 3 do
+            local extra_blocks = G.generateRow(game.level)
+            for _, b in ipairs(extra_blocks) do
+                if not game.grid[extra_row][b.col] then
+                    game.grid[extra_row][b.col] = { hp = b.hp, max_hp = b.max_hp }
+                end
+            end
+        end
         game.grid[G.ROWS + 1] = nil
         for i = #game.pickups, 1, -1 do
             if game.pickups[i].row > G.ROWS then table.remove(game.pickups, i) end
@@ -307,6 +315,18 @@ function handlers.collecting.update(game, dt)
         end
         if void_block then
             game.grid[1][void_block.col] = { hp = math.huge, max_hp = 1, void = true }
+        end
+
+        -- Spawn extra blocks in rows 2 and 3 to keep pressure on the player.
+        -- Only fill empty cells so shifted blocks are never overwritten, and
+        -- skip pickup/mutagen/void generation (those stay row-1 only).
+        for extra_row = 2, 3 do
+            local extra_blocks = G.generateRow(game.level)
+            for _, b in ipairs(extra_blocks) do
+                if not game.grid[extra_row][b.col] then
+                    game.grid[extra_row][b.col] = { hp = b.hp, max_hp = b.max_hp }
+                end
+            end
         end
 
         -- Apply pending ball pickups
