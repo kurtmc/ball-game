@@ -1,4 +1,5 @@
 local version = require("version")
+local scaling = require("scaling")
 
 local updater = {}
 
@@ -427,9 +428,13 @@ function updater.update(dt)
     end
 end
 
--- Refresh icon hit area
+-- Refresh icon hit area (bottom-right of canvas; recomputed per draw /
+-- hit-test since scaling.GAME_HEIGHT changes with window aspect).
+-- Extra bottom margin clears the Android navigation gesture bar.
 local ICON_R = 10
-local ICON_CX, ICON_CY = 800 - ICON_R - 8, 800 - ICON_R - 6
+local function iconPos()
+    return scaling.GAME_WIDTH - ICON_R - 8, scaling.GAME_HEIGHT - ICON_R - 24
+end
 local spin_angle = 0
 
 local function drawRefreshIcon(cx, cy, r, color_r, color_g, color_b, alpha)
@@ -465,28 +470,30 @@ local function drawRefreshIcon(cx, cy, r, color_r, color_g, color_b, alpha)
 end
 
 function updater.draw()
+    local icon_cx, icon_cy = iconPos()
+
     -- Version in bottom-left
     love.graphics.setColor(0.25, 0.25, 0.3)
-    love.graphics.printf(updater.current_version, 10, 800 - 18, 200, "left")
+    love.graphics.printf(updater.current_version, 10, scaling.GAME_HEIGHT - 36, 200, "left")
 
     -- Refresh icon
     if updater.checking then
         spin_angle = spin_angle + 0.1
-        drawRefreshIcon(ICON_CX, ICON_CY, ICON_R, 0.4, 0.4, 0.5, 0.7)
+        drawRefreshIcon(icon_cx, icon_cy, ICON_R, 0.4, 0.4, 0.5, 0.7)
     else
-        drawRefreshIcon(ICON_CX, ICON_CY, ICON_R, 0.3, 0.3, 0.4, 0.5)
+        drawRefreshIcon(icon_cx, icon_cy, ICON_R, 0.3, 0.3, 0.4, 0.5)
     end
 
     -- Status message (fades out)
     if updater.status_message and updater.status_timer > 0 then
         local alpha = math.min(1, updater.status_timer) * 0.5
         love.graphics.setColor(0.5, 0.5, 0.5, alpha)
-        love.graphics.printf(updater.status_message, ICON_CX - 210, ICON_CY - 6, 200, "right")
+        love.graphics.printf(updater.status_message, icon_cx - 210, icon_cy - 6, 200, "right")
     end
 
     -- Update available banner
     if updater.update_available and not updater.dismissed then
-        local w = 800
+        local w = scaling.GAME_WIDTH
         local banner_h = 30
 
         love.graphics.setColor(0.15, 0.5, 0.15, 0.9)
@@ -539,8 +546,9 @@ end
 
 function updater.mousepressed(x, y)
     -- Check if refresh icon was clicked
-    local dx = x - ICON_CX
-    local dy = y - ICON_CY
+    local icon_cx, icon_cy = iconPos()
+    local dx = x - icon_cx
+    local dy = y - icon_cy
     if dx * dx + dy * dy <= (ICON_R + 4) * (ICON_R + 4) then
         updater.checkForUpdates()
         return true

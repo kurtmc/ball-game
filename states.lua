@@ -5,6 +5,7 @@ local audio = require("audio")
 local particles = require("particles")
 local chaos = require("chaos")
 local mutations = require("mutations")
+local scaling = require("scaling")
 
 local states = {}
 
@@ -450,12 +451,15 @@ handlers.drafting = {}
 local DRAFT_PANEL_W = 190
 local DRAFT_PANEL_H = 210
 local DRAFT_PANEL_GAP = 15
-local DRAFT_PANEL_Y = 290
 
 local function draftPanelX(i)
     local total_w = 3 * DRAFT_PANEL_W + 2 * DRAFT_PANEL_GAP
     local start_x = (800 - total_w) / 2
     return start_x + (i - 1) * (DRAFT_PANEL_W + DRAFT_PANEL_GAP)
+end
+
+local function draftPanelY()
+    return (scaling.GAME_HEIGHT - DRAFT_PANEL_H) / 2
 end
 
 local function applyDraftChoice(game, mtype)
@@ -478,10 +482,11 @@ end
 
 function handlers.drafting.mousepressed(game, x, y)
     if not game.draft_choices then return end
+    local py = draftPanelY()
     for i = 1, 3 do
         local px = draftPanelX(i)
         if x >= px and x <= px + DRAFT_PANEL_W
-           and y >= DRAFT_PANEL_Y and y <= DRAFT_PANEL_Y + DRAFT_PANEL_H then
+           and y >= py and y <= py + DRAFT_PANEL_H then
             applyDraftChoice(game, game.draft_choices[i])
             return
         end
@@ -510,16 +515,18 @@ end
 function handlers.game_over.draw(game)
     -- Darken overlay
     love.graphics.setColor(0, 0, 0, 0.7)
-    love.graphics.rectangle("fill", 0, 0, 800, 800)
+    love.graphics.rectangle("fill", 0, 0, scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
+
+    local cy = scaling.GAME_HEIGHT / 2
 
     love.graphics.setColor(1, 0.3, 0.3)
-    love.graphics.printf("GAME OVER", 0, 300, 800, "center")
+    love.graphics.printf("GAME OVER", 0, cy - 60, 800, "center")
 
     love.graphics.setColor(1, 1, 1)
-    love.graphics.printf("Level: " .. game.level .. "  Score: " .. game.score, 0, 360, 800, "center")
+    love.graphics.printf("Level: " .. game.level .. "  Score: " .. game.score, 0, cy, 800, "center")
 
     love.graphics.setColor(0.7, 0.7, 0.7)
-    love.graphics.printf("Click or press any key to restart", 0, 420, 800, "center")
+    love.graphics.printf("Click or press any key to restart", 0, cy + 60, 800, "center")
 end
 
 function handlers.game_over.mousepressed(game, x, y)

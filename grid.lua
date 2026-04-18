@@ -2,7 +2,10 @@ local util = require("util")
 
 local grid = {}
 
--- Layout constants
+-- Layout constants. The grid occupies a fixed 800x755 region at the top of
+-- the virtual canvas. On portrait-stretched canvases (scaling.GAME_HEIGHT >
+-- 800), the extra space below FLOOR_Y becomes the aim-drag zone and hosts
+-- the bottom UI (speed hint, version, update icon).
 grid.COLS         = 7
 grid.ROWS         = 11
 grid.CELL_SIZE    = 65
@@ -10,7 +13,7 @@ grid.GRID_WIDTH   = grid.COLS * grid.CELL_SIZE   -- 455
 grid.GRID_LEFT    = math.floor((800 - grid.GRID_WIDTH) / 2)  -- 172
 grid.GRID_RIGHT   = grid.GRID_LEFT + grid.GRID_WIDTH         -- 627
 grid.GRID_TOP     = 40
-grid.FLOOR_Y      = grid.GRID_TOP + grid.ROWS * grid.CELL_SIZE  -- 560
+grid.FLOOR_Y      = grid.GRID_TOP + grid.ROWS * grid.CELL_SIZE  -- 755
 grid.BLOCK_PAD    = 3
 grid.BLOCK_SIZE   = grid.CELL_SIZE - 2 * grid.BLOCK_PAD  -- 59
 grid.BALL_RADIUS  = 5

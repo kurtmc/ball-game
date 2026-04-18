@@ -2,6 +2,7 @@ local G = require("grid")
 local util = require("util")
 local mut = require("mutations")
 local chaos = require("chaos")
+local scaling = require("scaling")
 
 local ui = {}
 
@@ -76,31 +77,39 @@ function ui.drawHUD(game)
         love.graphics.setFont(fontMedium)
     end
 
-    -- Chaos Zone entrance flash
+    -- Chaos Zone entrance flash (centered on playfield, not canvas)
     if game.chaos_zone_flash > 0 then
         local alpha = math.min(1, game.chaos_zone_flash / 1.0)
         local pulse = 0.7 + 0.3 * math.sin(love.timer.getTime() * 8)
         love.graphics.setFont(fontLarge)
         love.graphics.setColor(0.8, 0.2, 1.0, alpha * pulse)
-        love.graphics.printf("T H E   C H A O S   Z O N E", 0, 370, 800, "center")
+        local flash_y = (G.GRID_TOP + G.FLOOR_Y) / 2 - 15
+        love.graphics.printf("T H E   C H A O S   Z O N E", 0, flash_y, 800, "center")
         love.graphics.setFont(fontMedium)
     end
 
-    -- Speed indicator during resolve
+    -- Speed indicator during resolve (bottom of virtual canvas, with enough
+    -- margin to clear the Android navigation gesture bar on portrait phones).
     if game.state == "launching" or game.state == "resolving" then
+        local speed_y = scaling.GAME_HEIGHT - 40
         if game.speed_mult > 1 then
             love.graphics.setColor(1, 1, 0.3)
-            love.graphics.printf(">> " .. game.speed_mult .. "x", 0, 775, 800, "center")
+            love.graphics.printf(">> " .. game.speed_mult .. "x", 0, speed_y, 800, "center")
         else
             love.graphics.setColor(0.4, 0.4, 0.4)
-            love.graphics.printf("[Space] to speed up", 0, 775, 800, "center")
+            local hint = love.system.getOS() == "Android"
+                and "Tap to speed up"
+                or  "[Space] to speed up"
+            love.graphics.printf(hint, 0, speed_y, 800, "center")
         end
-        -- Combo multiplier display
+        -- Combo multiplier display (anchored to the grid, not the canvas
+        -- bottom, so on portrait phones it stays near the action instead of
+        -- floating in the aim zone).
         local mult = math.max(1, math.ceil((game.combo or 0) / 10))
         if mult > 1 then
             love.graphics.setFont(fontLarge)
             love.graphics.setColor(1, 1, 0.2, 0.9)
-            love.graphics.printf("x" .. mult .. " COMBO!", 0, 740, 800, "center")
+            love.graphics.printf("x" .. mult .. " COMBO!", 0, G.FLOOR_Y - 15, 800, "center")
             love.graphics.setFont(fontMedium)
         end
     end
@@ -110,10 +119,10 @@ function ui.drawHUD(game)
         ui.drawDraft(game)
     end
 
-    -- Dev mode panel
+    -- Dev mode panel (bottom-left of canvas)
     if game.dev_mode and game.state == "aiming" then
         love.graphics.setFont(fontSmall)
-        local dy = 620
+        local dy = scaling.GAME_HEIGHT - 180
         local dx = 10
         love.graphics.setColor(0, 0, 0, 0.5)
         love.graphics.rectangle("fill", dx - 4, dy - 4, 180, 170, 4, 4)
@@ -139,7 +148,7 @@ function ui.drawHUD(game)
     elseif game.dev_mode then
         love.graphics.setFont(fontSmall)
         love.graphics.setColor(1, 1, 0, 0.3)
-        love.graphics.print("DEV", 10, 780)
+        love.graphics.print("DEV", 10, scaling.GAME_HEIGHT - 20)
         love.graphics.setFont(fontMedium)
     end
 end
@@ -150,21 +159,21 @@ function ui.drawDraft(game)
     local PANEL_W = 190
     local PANEL_H = 210
     local PANEL_GAP = 15
-    local PANEL_Y = 290
+    local PANEL_Y = (scaling.GAME_HEIGHT - PANEL_H) / 2
     local total_w = 3 * PANEL_W + 2 * PANEL_GAP
     local start_x = (800 - total_w) / 2
 
     -- Dimmed background overlay
     love.graphics.setColor(0, 0, 0, 0.75)
-    love.graphics.rectangle("fill", 0, 0, 800, 800)
+    love.graphics.rectangle("fill", 0, 0, scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
 
     -- Title
     love.graphics.setFont(fontLarge)
     love.graphics.setColor(1, 0.85, 0.2)
-    love.graphics.printf("MUTATION DRAFT", 0, 230, 800, "center")
+    love.graphics.printf("MUTATION DRAFT", 0, PANEL_Y - 60, 800, "center")
     love.graphics.setFont(fontSmall)
     love.graphics.setColor(0.7, 0.7, 0.7)
-    love.graphics.printf("Choose one  [1] [2] [3]", 0, 260, 800, "center")
+    love.graphics.printf("Choose one  [1] [2] [3]", 0, PANEL_Y - 30, 800, "center")
 
     for i, mtype in ipairs(game.draft_choices) do
         local t = mut.TYPES[mtype]

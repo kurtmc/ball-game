@@ -1,16 +1,25 @@
 local scaling = {}
 
--- The game is designed for 800x800
+-- The game is designed for 800x800 (square). On taller-than-square screens
+-- (portrait phones), scaling.GAME_HEIGHT stretches to match the screen's
+-- aspect ratio so the game fills the full width without letterbox bars.
+-- The grid stays at y=40..755 (top of canvas); the extra vertical slack
+-- becomes the aim-drag zone and hosts the bottom UI.
 scaling.GAME_WIDTH = 800
 scaling.GAME_HEIGHT = 800
 
--- Current scale and offset
 scaling.scale = 1
 scaling.offset_x = 0
 scaling.offset_y = 0
 
 function scaling.update()
     local w, h = love.graphics.getDimensions()
+    local aspect = h / w
+    if aspect > 1 then
+        scaling.GAME_HEIGHT = scaling.GAME_WIDTH * aspect
+    else
+        scaling.GAME_HEIGHT = scaling.GAME_WIDTH
+    end
     scaling.scale = math.min(w / scaling.GAME_WIDTH, h / scaling.GAME_HEIGHT)
     scaling.offset_x = (w - scaling.GAME_WIDTH * scaling.scale) / 2
     scaling.offset_y = (h - scaling.GAME_HEIGHT * scaling.scale) / 2

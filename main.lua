@@ -121,7 +121,7 @@ function love.draw()
     -- Draw background for game area
     local bg = game.chaos_active and chaos_bg or normal_bg
     love.graphics.setColor(bg[1], bg[2], bg[3])
-    love.graphics.rectangle("fill", 0, 0, 800, 800)
+    love.graphics.rectangle("fill", 0, 0, scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
 
     ui.drawGrid(game)
     states.draw(game)
