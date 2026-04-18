@@ -88,7 +88,9 @@ local function devSkipLevels(game, count)
         end
         for extra_row = 2, 3 do
             local extra_blocks = G.generateRow(game.level)
-            for _, b in ipairs(extra_blocks) do
+            local keep = extra_row == 2 and math.random(1, 2) or math.random(0, 1)
+            for i = 1, math.min(keep, #extra_blocks) do
+                local b = extra_blocks[i]
                 if not game.grid[extra_row][b.col] then
                     game.grid[extra_row][b.col] = { hp = b.hp, max_hp = b.max_hp }
                 end
@@ -320,9 +322,13 @@ function handlers.collecting.update(game, dt)
         -- Spawn extra blocks in rows 2 and 3 to keep pressure on the player.
         -- Only fill empty cells so shifted blocks are never overwritten, and
         -- skip pickup/mutagen/void generation (those stay row-1 only).
+        -- Sparse counts (row 2: 1-2, row 3: 0-1) leave plenty of gaps so the
+        -- ball can actually thread through.
         for extra_row = 2, 3 do
             local extra_blocks = G.generateRow(game.level)
-            for _, b in ipairs(extra_blocks) do
+            local keep = extra_row == 2 and math.random(1, 2) or math.random(0, 1)
+            for i = 1, math.min(keep, #extra_blocks) do
+                local b = extra_blocks[i]
                 if not game.grid[extra_row][b.col] then
                     game.grid[extra_row][b.col] = { hp = b.hp, max_hp = b.max_hp }
                 end
