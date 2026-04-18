@@ -19,7 +19,7 @@ local function resetGame()
     game.pickups        = {}  -- {col, row, collected}
     game.ball_count     = 1
     game.pending_balls  = 0
-    game.launch_x       = 400
+    game.launch_x       = (G.GRID_LEFT + G.GRID_RIGHT) / 2
     game.balls          = {}
     game.landed_balls   = {}
     game.first_landed_x = nil
@@ -76,11 +76,12 @@ function love.load()
     ui.load()
     local audio = require("audio")
     audio.load()
+    scaling.update()
+    G.updateLayout(scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
     resetGame()
     game.resetGame = resetGame
     game.dev_mode = dev_mode
     updater.checkForUpdates()
-    scaling.update()
 end
 
 function love.update(dt)
@@ -170,6 +171,9 @@ end
 
 function love.resize(w, h)
     scaling.update()
+    G.updateLayout(scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
+    game.launch_x = math.max(G.GRID_LEFT + G.BALL_RADIUS,
+        math.min(G.GRID_RIGHT - G.BALL_RADIUS, game.launch_x))
 end
 
 local RESIZE_STEP = 100
@@ -180,6 +184,7 @@ function love.keypressed(key)
         local w, h = love.graphics.getDimensions()
         love.window.setMode(w + RESIZE_STEP, h + RESIZE_STEP, {resizable = true, minwidth = 400, minheight = 400})
         scaling.update()
+        G.updateLayout(scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
         return
     elseif key == "-" or key == "kp-" then
         local w, h = love.graphics.getDimensions()
@@ -187,6 +192,7 @@ function love.keypressed(key)
         local nh = math.max(400, h - RESIZE_STEP)
         love.window.setMode(nw, nh, {resizable = true, minwidth = 400, minheight = 400})
         scaling.update()
+        G.updateLayout(scaling.GAME_WIDTH, scaling.GAME_HEIGHT)
         return
     end
     states.keypressed(game, key)

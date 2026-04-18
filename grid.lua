@@ -2,24 +2,67 @@ local util = require("util")
 
 local grid = {}
 
--- Layout constants. The grid occupies a fixed 800x755 region at the top of
--- the virtual canvas. On portrait-stretched canvases (scaling.GAME_HEIGHT >
--- 800), the extra space below FLOOR_Y becomes the aim-drag zone and hosts
--- the bottom UI (speed hint, version, update icon).
-grid.COLS         = 7
-grid.ROWS         = 11
+grid.COLS = 7
+grid.ROWS = 11
+grid.LAUNCH_DELAY = 0.065
+
+-- Layout constants recomputed by grid.updateLayout(canvas_w, canvas_h).
+-- Defaults match the 800x800 square design. On portrait canvases the cells
+-- expand so the grid fills ~88% of the width, and the floor drops to ~62%
+-- of the canvas height so there's a natural aim-drag zone below for thumbs.
 grid.CELL_SIZE    = 65
-grid.GRID_WIDTH   = grid.COLS * grid.CELL_SIZE   -- 455
-grid.GRID_LEFT    = math.floor((800 - grid.GRID_WIDTH) / 2)  -- 172
-grid.GRID_RIGHT   = grid.GRID_LEFT + grid.GRID_WIDTH         -- 627
+grid.GRID_WIDTH   = grid.COLS * grid.CELL_SIZE
+grid.GRID_LEFT    = math.floor((800 - grid.GRID_WIDTH) / 2)
+grid.GRID_RIGHT   = grid.GRID_LEFT + grid.GRID_WIDTH
 grid.GRID_TOP     = 40
-grid.FLOOR_Y      = grid.GRID_TOP + grid.ROWS * grid.CELL_SIZE  -- 755
+grid.FLOOR_Y      = grid.GRID_TOP + grid.ROWS * grid.CELL_SIZE
 grid.BLOCK_PAD    = 3
-grid.BLOCK_SIZE   = grid.CELL_SIZE - 2 * grid.BLOCK_PAD  -- 59
+grid.BLOCK_SIZE   = grid.CELL_SIZE - 2 * grid.BLOCK_PAD
 grid.BALL_RADIUS  = 5
 grid.BALL_SPEED   = 600
-grid.LAUNCH_DELAY = 0.065
 grid.PICKUP_RADIUS = 12
+
+function grid.updateLayout(canvas_w, canvas_h)
+    local is_portrait = canvas_h > canvas_w
+    local target_w, target_floor_frac, aim_zone, top_pad
+
+    if is_portrait then
+        target_w          = canvas_w * 0.88
+        target_floor_frac = 0.62
+        aim_zone          = 180   -- reserved space below floor for thumb
+        top_pad           = 60    -- reserved space above grid for HUD
+    else
+        target_w          = 455   -- original 7 x 65
+        target_floor_frac = 755 / 800
+        aim_zone          = 40
+        top_pad           = 40
+    end
+
+    local new_cell = math.floor(target_w / grid.COLS)
+    local max_h_cell = math.floor((canvas_h - top_pad - aim_zone) / grid.ROWS)
+    if max_h_cell > 0 then new_cell = math.min(new_cell, max_h_cell) end
+    new_cell = math.max(55, new_cell)
+
+    grid.CELL_SIZE  = new_cell
+    grid.GRID_WIDTH = grid.COLS * grid.CELL_SIZE
+    grid.GRID_LEFT  = math.floor((canvas_w - grid.GRID_WIDTH) / 2)
+    grid.GRID_RIGHT = grid.GRID_LEFT + grid.GRID_WIDTH
+    grid.BLOCK_PAD  = math.max(3, math.floor(grid.CELL_SIZE * 3 / 65))
+    grid.BLOCK_SIZE = grid.CELL_SIZE - 2 * grid.BLOCK_PAD
+
+    local grid_h = grid.ROWS * grid.CELL_SIZE
+    local target_top = math.floor(canvas_h * target_floor_frac) - grid_h
+    target_top = math.max(top_pad, target_top)
+    target_top = math.min(target_top, canvas_h - grid_h - aim_zone)
+    grid.GRID_TOP = target_top
+    grid.FLOOR_Y  = grid.GRID_TOP + grid_h
+
+    -- Scale ball/pickup/speed with cell size so gameplay feel stays consistent
+    local s = grid.CELL_SIZE / 65
+    grid.BALL_RADIUS   = math.max(5, math.floor(5 * s))
+    grid.PICKUP_RADIUS = math.max(12, math.floor(12 * s))
+    grid.BALL_SPEED    = 600 * s
+end
 
 -- Convert grid coords (1-based) to pixel center
 function grid.gridToPixelCenter(col, row)
