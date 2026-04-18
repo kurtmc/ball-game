@@ -362,8 +362,14 @@ function updater.update(dt)
             updater.status_message = "Update check failed"
             updater.status_timer = 4
         end
-        -- Auto-start background download if update is available
-        if updater.update_available and updater.installer_url then
+        -- Auto-start background download if update is available.
+        -- Android app sandbox (targetSdk 34) blocks writing the APK to
+        -- /sdcard/Download, and bundled curl is unreliable, so the in-app
+        -- progress bar would stall at 0% forever. Skip it — Android users
+        -- tap the banner, which hands the URL to the system browser /
+        -- Download Manager via runInstaller → love.system.openURL.
+        if updater.update_available and updater.installer_url
+           and love.system.getOS() ~= "Android" then
             updater.startDownload()
         end
     end
@@ -500,7 +506,7 @@ function updater.draw()
         love.graphics.rectangle("fill", 0, 0, w, banner_h)
 
         local install_hint = love.system.getOS() == "Android"
-            and "Tap to install  |  Tap again to dismiss"
+            and "Tap to download"
             or  "Press [U] to install  |  [X] to dismiss"
         if updater.download_ready then
             -- Downloaded and ready to install
@@ -553,14 +559,12 @@ function updater.mousepressed(x, y)
         updater.checkForUpdates()
         return true
     end
-    -- On Android, tap the update banner to install (when ready) or dismiss
+    -- On Android, tapping the banner hands the APK URL to the system
+    -- browser / Download Manager (in-app download is blocked by scoped
+    -- storage on targetSdk 34).
     if love.system.getOS() == "Android" then
         if updater.update_available and not updater.dismissed and y < 30 then
-            if updater.download_ready then
-                updater.runInstaller()
-            else
-                updater.dismissed = true
-            end
+            updater.runInstaller()
             return true
         end
     end
@@ -568,19 +572,19 @@ function updater.mousepressed(x, y)
 end
 
 function updater.runInstaller()
+    local os_name = love.system.getOS()
+
+    -- Android: hand the APK URL to the system browser / Download Manager.
+    -- The in-app download path is blocked by scoped storage on targetSdk 34.
+    if os_name == "Android" then
+        love.system.openURL(updater.installer_url or RELEASES_URL)
+        love.event.quit()
+        return
+    end
+
     if updater.downloaded_path then
-        local os_name = love.system.getOS()
         if os_name == "Windows" then
             os.execute('start "" "' .. updater.downloaded_path .. '"')
-        elseif os_name == "Android" then
-            local ok = os.execute(
-                'am start -a android.intent.action.VIEW'
-                .. ' -t "application/vnd.android.package-archive"'
-                .. ' -d "file://' .. updater.downloaded_path .. '"'
-            )
-            if not ok then
-                love.system.openURL(RELEASES_URL)
-            end
         else
             os.execute('"' .. updater.downloaded_path .. '" &')
         end

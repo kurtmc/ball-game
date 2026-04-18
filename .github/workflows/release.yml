@@ -250,13 +250,23 @@ jobs:
       # placeholder resolved from app.name / app.name_byte_array in
       # gradle.properties, NOT from @string/app_name. Override both so the
       # launcher title is "Ballz" instead of the default "LÖVE for Android".
-      - name: Override app name in gradle.properties
+      #
+      # Also override app.application_id: love-android's default is
+      # org.love2d.android, which collides with any other LÖVE-based app on
+      # the device ("App not installed as package conflicts with an existing
+      # package"). A unique ID makes this install cleanly as its own app.
+      - name: Override app name and package ID in gradle.properties
         run: |
           sed -i 's/^app\.name_byte_array=/#app.name_byte_array=/' love-android/gradle.properties
           if grep -q '^#app\.name=' love-android/gradle.properties; then
             sed -i 's/^#app\.name=.*/app.name=Ballz/' love-android/gradle.properties
           elif ! grep -q '^app\.name=' love-android/gradle.properties; then
             echo 'app.name=Ballz' >> love-android/gradle.properties
+          fi
+          if grep -q '^app\.application_id=' love-android/gradle.properties; then
+            sed -i 's/^app\.application_id=.*/app.application_id=com.kurtmc.ballz/' love-android/gradle.properties
+          else
+            echo 'app.application_id=com.kurtmc.ballz' >> love-android/gradle.properties
           fi
 
       # Icons are deterministic and never change — cache them permanently so
