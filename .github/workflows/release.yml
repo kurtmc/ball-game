@@ -190,28 +190,26 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Restore the stable debug keystore from a repository secret.
-      # Using a secret (not a cache) means the key never expires, so APK
-      # signatures stay consistent across all builds indefinitely.
-      - name: Set up Android debug keystore
+      # Use the committed debug keystore at .ci/debug.keystore as the single
+      # source of truth for APK signing. A stable key means every release
+      # installs as an in-place update instead of "App not installed as
+      # package conflicts with an existing package".
+      #
+      # Debug keystores are not secret: the cert DN, passwords, and alias
+      # are all public AGP defaults; an attacker knowing these does not
+      # let them sign updates without the private key, and the private
+      # key is only used to sign side-loaded dev APKs (Play Store requires
+      # a separate release key anyway).
+      - name: Install debug keystore
         run: |
           mkdir -p ~/.android
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
-          # Fail loudly if the secret is missing/empty. An empty keystore
-          # triggers Gradle to regenerate a fresh random keystore per run,
-          # which makes every APK signature different and causes
-          # "App not installed as package conflicts with an existing
-          # package" when the user updates.
-          if [ ! -s ~/.android/debug.keystore ]; then
-            echo "ERROR: ANDROID_KEYSTORE_BASE64 secret is missing or empty." >&2
-            echo "Add it under Settings → Secrets → Actions." >&2
-            exit 1
-          fi
+          cp .ci/debug.keystore ~/.android/debug.keystore
           # Print the SHA-256 fingerprint so signature stability across
-          # runs is visible in the workflow log.
+          # runs is visible in the workflow log (must match the fingerprint
+          # reported by "Dump APK metadata" later).
           keytool -list -v -keystore ~/.android/debug.keystore \
-            -storepass android -alias androiddebugkey 2>/dev/null \
-            | grep -E 'SHA256:' || true
+            -storepass android -alias androiddebugkey \
+            | grep -E 'SHA256:'
 
       # Cache the entire love-android clone + NDK build outputs.
       # The NDK C++ compile (~25 min) only needs to run once; subsequent
@@ -238,6 +236,44 @@ jobs:
           path: ~/.gradle
           key: ${{ runner.os }}-gradle-love-android-11.5
           restore-keys: ${{ runner.os }}-gradle-
+
+      # love-android 11.5 ships no signingConfigs block, so AGP falls back to
+      # its auto-generated debug key in ~/.android/debug.keystore. In practice
+      # that auto-generation path is unreliable on CI runners (HOME drift,
+      # permissions, cold caches), producing a different signing cert every
+      # build. Pin the debug signingConfig to our committed keystore so every
+      # APK is signed with the same key.
+      - name: Pin debug signingConfig in love-android
+        run: |
+          KS_PATH="$(pwd)/.ci/debug.keystore"
+          python3 - "$KS_PATH" <<'PY'
+          import sys, pathlib
+          ks_path = sys.argv[1]
+          f = pathlib.Path("love-android/app/build.gradle")
+          src = f.read_text()
+          # Skip if already injected (love-android clone is cached across
+          # runs; we must not keep stacking signingConfigs blocks).
+          if "BALLZ_SIGNING_PINNED" in src:
+              print("signingConfigs already pinned, skipping")
+              sys.exit(0)
+          marker = "android {"
+          assert marker in src, "android { block not found in love-android/app/build.gradle"
+          injection = f"""android {{
+              // BALLZ_SIGNING_PINNED
+              signingConfigs {{
+                  debug {{
+                      storeFile file('{ks_path}')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }}
+              }}
+          """
+          patched = src.replace(marker, injection, 1)
+          f.write_text(patched)
+          print("Injected signingConfigs.debug pointing at", ks_path)
+          PY
+          grep -A 8 'signingConfigs' love-android/app/build.gradle
 
       # versionCode must increase with every release for Android to recognise
       # an APK as an update. Use the workflow run number (auto-increments).
