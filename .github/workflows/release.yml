@@ -226,10 +226,12 @@ jobs:
 
       # versionCode must increase with every release for Android to recognise
       # an APK as an update. Use the workflow run number (auto-increments).
+      # love-android's build.gradle reads app.version_code / app.version_name
+      # from gradle.properties (not the bare versionCode / versionName keys).
       - name: Set versionCode
         run: |
-          sed -i "s/^versionCode=.*/versionCode=${{ github.run_number }}/" love-android/gradle.properties
-          sed -i "s/^versionName=.*/versionName=${{ steps.version.outputs.version }}/" love-android/gradle.properties
+          sed -i "s/^app\.version_code=.*/app.version_code=${{ github.run_number }}/" love-android/gradle.properties
+          sed -i "s/^app\.version_name=.*/app.version_name=${{ steps.version.outputs.version }}/" love-android/gradle.properties
 
       # Explicitly set R.bool.embed=true in the app module's embed flavor
       # source set. The value is defined in the love/ submodule but overriding
